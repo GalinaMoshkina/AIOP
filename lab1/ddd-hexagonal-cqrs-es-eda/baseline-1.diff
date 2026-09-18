@@ -1,0 +1,1627 @@
+diff --git a/lab1/AGENTS.md b/lab1/AGENTS.md
+deleted file mode 100644
+index 09e0eb4..0000000
+--- a/lab1/AGENTS.md
++++ /dev/null
+@@ -1,96 +0,0 @@
+-# AGENTS.md
+-
+-## Project Overview
+-TypeScript/NestJS backend for a to-do list application built with DDD, Hexagonal Architecture (Ports & Adapters), CQRS, Event Sourcing, and BDD testing.
+-
+-Organized by bounded contexts, not technical layers alone. Preserve existing patterns before adding new abstractions.
+-
+----
+-
+-## 1. Architecture and Layer Boundaries
+-Keep responsibilities separated:
+-- **Presentation / API:** Controllers and DTOs handle input validation, invoke the application layer, and format responses. No business rules or database access.
+-- **Application:** Command and Query Handlers coordinate use cases using ports. No framework infrastructure code.
+-- **Domain:** Pure business logic (entities, aggregates, value objects, domain events, business errors). Zero dependencies on external frameworks, databases, or transport protocols.
+-- **Infrastructure:** Adapters implementing ports for databases, messaging, and third-party services. Details must not leak into the domain.
+-
+----
+-
+-## 2. Hexagonal Architecture: Ports and Adapters
+-Dependencies point inward: `Application/Domain -> Port -> Adapter -> External System`.
+-Never bypass ports to access databases, brokers, or external APIs directly. Extend an existing port before creating a new one.
+-
+----
+-
+-## 3. CQRS
+-Separate state changes from reads:
+-- **Commands (`Create...`, `Update...`, `Delete...`):** Mutate state. Handlers coordinate; domain models execute business rules.
+-- **Queries (`Get...`, `List...`, `Search...`, `Find...`):** Read-only. Handlers retrieve/shape data without state mutation.
+-Do not mix command and query responsibilities in a single handler.
+-
+----
+-
+-## 4. Domain and Application Errors
+-Use explicit domain/application errors instead of leaking infrastructure exceptions or generic `Error` instances.
+-Search for and reuse existing error types before creating new ones. Keep error handling consistent with neighboring code.
+-
+----
+-
+-## 5. DTOs and External Boundaries
+-Keep transport DTOs separate from domain models (`External DTO <-> Domain Model`).
+-Controllers must expose DTOs, never domain entities directly. Use existing mapping conventions.
+-
+----
+-
+-## 6. Event Sourcing and Domain Events
+-State changes to event-sourced aggregates must follow existing command/event flows.
+-Never update event-sourced state by writing directly to persistence. Do not introduce Event Sourcing for read-only operations.
+-
+----
+-
+-## 7. Integration Events
+-- **Domain events:** Internal domain state changes.
+-- **Integration events:** External contracts between bounded contexts.
+-Follow existing outbox/publishing flows and versioning rules. Do not expose internal domain details as external integration contracts.
+-
+----
+-
+-## 8. TypeScript Conventions
+-- Use explicit types at boundaries; avoid `any`.
+-- Follow ESLint/Prettier configs and existing naming conventions.
+-- Prefer minimal changes. Do not introduce generic abstractions unnecessarily.
+-
+----
+-
+-## 9. Testing
+-Verify observable behavior, not implementation details:
+-- **Application/Domain:** Fast unit tests with mocked ports covering success, business-rule failures, and regressions.
+-- **Infrastructure:** Integration tests for real database or messaging behavior.
+-Always run and verify relevant test suites before marking work complete.
+-
+----
+-
+-## 10. Working With Existing Code
+-Before building a feature:
+-1. Locate the bounded context.
+-2. Find a similar existing feature.
+-3. Trace its full flow (controller, DTO, handler, domain, port, adapter, tests).
+-4. Follow its conventions.
+-Do not refactor unrelated code during feature implementation.
+-
+----
+-
+-## 11. Avoid Overengineering
+-Keep abstractions lean:
+-- No duplicate repository ports, unnecessary mappers, or helper services for minor code moves.
+-- No Event Sourcing or integration events unless explicitly required by context.
+-
+----
+-
+-## 12. Definition of Done
+-A feature is complete when:
+-- Placed in the correct bounded context with proper CQRS separation.
+-- Boundaries, ports, and DTO mappings are respected.
+-- Business rules stay in the domain and errors follow existing conventions.
+-- Events match established Event Sourcing/integration rules.
+-- Behavioral unit/integration tests, linting, and type checks are run and passing.
+\ No newline at end of file
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/README.md b/lab1/ddd-hexagonal-cqrs-es-eda/README.md
+index e6fd6b3..5a46877 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/README.md
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/README.md
+@@ -1127,3 +1127,24 @@ You can also contribute with a star to spread the word!
+ - [A Philosophy of Software Design](https://www.goodreads.com/book/show/39996759-a-philosophy-of-software-design) - John Ousterhout
+ - [Clean Code: A Handbook of Agile Software Craftsmanship](https://www.goodreads.com/book/show/3735293-clean-code) – Robert C. Martin (Uncle Bob)
+ - [Patterns, Principles, and Practices of Domain-Driven Design](https://www.amazon.com/Patterns-Principles-Practices-Domain-Driven-Design/dp/1118714709) – Scott Millett, Nick Tune
++
++
++### Todo list pagination
++
++`GET /todos?page=1&limit=20&status=all` requires the existing bearer authentication.
++
++- `page`: positive integer, default `1`.
++- `limit`: integer from `1` to `100`, default `20`.
++- `status`: `all`, `completed`, or `active`, default `all`.
++- Invalid values (including empty or repeated parameters) return HTTP 400.
++
++The response is `{ "items": [...], "total": 42, "page": 1, "limit": 20 }`.
++`total` counts only the authenticated user's tasks matching the status, before
++pagination. A page beyond the last page returns empty `items` and retains `total`.
++Tasks are ordered by creation time descending, then ID ascending for ties.
++The former `offset` pagination and `todos` response field are replaced by `page`
++and `items`. The frontend includes status selection and Previous/Next controls;
++SSE events refresh the current page and its total.
++
++The PostgreSQL list tests are included in `pnpm --dir backend run test:integration`.
++Use a dedicated test database through the existing `PG_*` environment variables.
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/package.json b/lab1/ddd-hexagonal-cqrs-es-eda/backend/package.json
+index a608c05..958fa3b 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/package.json
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/package.json
+@@ -15,7 +15,7 @@
+     "lint": "eslint src",
+     "lint:fix": "eslint src --fix",
+     "test": "jest",
+-    "test:integration": "RUN_DATABASE_TESTS=true jest --runInBand --runTestsByPath src/bounded-contexts/todo/todo/repository/__tests__/todo-event-store.integration.test.ts src/bounded-contexts/iam/iam/repository/__tests__/user-identity.integration.test.ts",
++    "test:integration": "RUN_DATABASE_TESTS=true jest --runInBand --runTestsByPath src/bounded-contexts/todo/todo/repository/__tests__/todo-event-store.integration.test.ts src/bounded-contexts/iam/iam/repository/__tests__/user-identity.integration.test.ts src/bounded-contexts/todo/todo/repository/__tests__/todo-read.integration.test.ts",
+     "test:watch": "jest --watch",
+     "test:cov": "jest --coverage",
+     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo-list.test.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo-list.test.ts
+new file mode 100644
+index 0000000..c076219
+--- /dev/null
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo-list.test.ts
+@@ -0,0 +1,115 @@
++import { Test } from '@nestjs/testing';
++import {
++  FastifyAdapter,
++  NestFastifyApplication,
++} from '@nestjs/platform-fastify';
++import { TodoController } from '../todo.rest.controller';
++import { OidcAuthGuard } from '../../bounded-contexts/iam/iam/oidc/oidc-auth.guard';
++import { BUSES_TOKENS } from '../../lib/infra/nest-jetstream';
++
++describe('GET /todos', () => {
++  let app: NestFastifyApplication;
++  const request = jest.fn();
++  beforeAll(async () => {
++    const module = await Test.createTestingModule({
++      controllers: [TodoController],
++      providers: [
++        { provide: BUSES_TOKENS.PUBSUB_COMMAND_BUS, useValue: {} },
++        { provide: BUSES_TOKENS.PUBSUB_QUERY_BYS, useValue: { request } },
++      ],
++    })
++      .overrideGuard(OidcAuthGuard)
++      .useValue({ canActivate: () => true })
++      .compile();
++    app = module.createNestApplication<NestFastifyApplication>(
++      new FastifyAdapter(),
++    );
++    await app.init();
++    await app.getHttpAdapter().getInstance().ready();
++  });
++  beforeEach(() => {
++    request
++      .mockReset()
++      .mockResolvedValue({ isOk: true, data: { items: [], total: 0 } });
++  });
++  afterAll(async () => {
++    await app.close();
++  });
++  it('uses defaults and returns the page envelope', async () => {
++    const response = await app.inject({ method: 'GET', url: '/todos' });
++    expect(response.statusCode).toBe(200);
++    expect(response.json()).toEqual({
++      items: [],
++      total: 0,
++      page: 1,
++      limit: 20,
++    });
++    expect(request).toHaveBeenCalledWith(
++      expect.objectContaining({ page: 1, limit: 20, status: 'all' }),
++    );
++  });
++  it.each(['all', 'completed', 'active'])(
++    'passes page, limit and %s to the query',
++    async (status) => {
++      const response = await app.inject({
++        method: 'GET',
++        url: `/todos?page=2&limit=100&status=${status}`,
++      });
++      expect(response.statusCode).toBe(200);
++      expect(request).toHaveBeenCalledWith(
++        expect.objectContaining({ page: 2, limit: 100, status }),
++      );
++    },
++  );
++  it.each([
++    'page=0',
++    'page=-1',
++    'page=1.5',
++    'page=abc',
++    'page=',
++    'page=1e2',
++    'page=9007199254740992',
++    'page=1&page=2',
++    'page=%20',
++    'limit=0',
++    'limit=-1',
++    'limit=101',
++    'limit=1.5',
++    'limit=abc',
++    'limit=',
++    'limit=10&limit=20',
++    'status=',
++    'status=done',
++    'status=ALL',
++    'status=all&status=active',
++  ])('rejects invalid %s with HTTP 400', async (query) => {
++    const response = await app.inject({
++      method: 'GET',
++      url: `/todos?${query}`,
++    });
++    expect(response.statusCode).toBe(400);
++    expect(request).not.toHaveBeenCalled();
++  });
++  it('preserves filtered total on an empty page', async () => {
++    request.mockResolvedValue({ isOk: true, data: { items: [], total: 7 } });
++    const response = await app.inject({
++      method: 'GET',
++      url: '/todos?page=10&limit=2',
++    });
++    expect(response.json()).toEqual({
++      items: [],
++      total: 7,
++      page: 10,
++      limit: 2,
++    });
++  });
++  it('returns HTTP 500 on query failure', async () => {
++    request.mockResolvedValue({
++      isOk: false,
++      error: { message: 'Database failed' },
++    });
++    expect(
++      (await app.inject({ method: 'GET', url: '/todos' })).statusCode,
++    ).toBe(500);
++  });
++});
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
+index e115870..dbf3e93 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
+@@ -1,3 +1,5 @@
++import { BadRequestException } from '@nestjs/common';
++import { TodoStatus } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+ import { ApiProperty } from '@nestjs/swagger';
+ import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+ 
+@@ -14,19 +16,37 @@ export class TodoDto {
+   @ApiProperty({ description: 'The creation timestamp of the todo' })
+   createdAt: number;
+ 
+-  @ApiProperty({ description: 'The last update timestamp of the todo', required: false })
++  @ApiProperty({
++    description: 'The last update timestamp of the todo',
++    required: false,
++  })
+   updatedAt?: number;
+ }
+ 
+ export class GetAllTodosResponseDto {
+-  @ApiProperty({ 
++  @ApiProperty({
+     type: [TodoDto],
+-    description: 'Array of todo items'
++    description: 'Array of todo items',
+   })
+-  todos: TodoDto[];
++  items: TodoDto[];
++
++  @ApiProperty()
++  total: number;
++  @ApiProperty({ default: 1 })
++  page: number;
++  @ApiProperty({ default: 20 })
++  limit: number;
+ 
+-  constructor(todos: TodoReadModel[]) {
+-    this.todos = todos.map(todo => ({
++  constructor(
++    todos: TodoReadModel[],
++    total: number,
++    page: number,
++    limit: number,
++  ) {
++    this.total = total;
++    this.page = page;
++    this.limit = limit;
++    this.items = todos.map((todo) => ({
+       id: todo.id,
+       title: todo.title,
+       completed: todo.completed,
+@@ -35,3 +55,25 @@ export class GetAllTodosResponseDto {
+     }));
+   }
+ }
++
++export function parseTodoListQuery(query: Record<string, unknown>) {
++  const integer = (name: string, fallback: number, max: number): number => {
++    const value = query[name];
++    if (value === undefined) return fallback;
++    if (typeof value !== 'string' || !/^[0-9]+$/.test(value)) {
++      throw new BadRequestException(`${name} must be a positive integer`);
++    }
++    const parsed = Number(value);
++    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) {
++      throw new BadRequestException(`${name} is out of range`);
++    }
++    return parsed;
++  };
++  const page = integer('page', 1, Number.MAX_SAFE_INTEGER);
++  const limit = integer('limit', 20, 100);
++  const status = query.status === undefined ? 'all' : query.status;
++  if (status !== 'all' && status !== 'completed' && status !== 'active') {
++    throw new BadRequestException('Invalid status');
++  }
++  return { page, limit, status: status as TodoStatus };
++}
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+index cc99c66..55e266b 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+@@ -20,13 +20,17 @@ import {
+   ApiResponse,
+   ApiBearerAuth,
+   ApiParam,
++  ApiQuery,
+ } from '@nestjs/swagger';
+ import { AddTodoRequestDto } from './dto/add-todo.dto';
+ import { ModifyTodoTitleRequestDto } from './dto/modify-todo-title.dto';
+ import { BUSES_TOKENS } from '../lib/infra/nest-jetstream';
+ import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guard';
+ import { Infra } from 'ddd-tactical-core-boilerplate';
+-import { GetAllTodosResponseDto } from './dto/get-all-todos.dto';
++import {
++  GetAllTodosResponseDto,
++  parseTodoListQuery,
++} from './dto/get-all-todos.dto';
+ import { CompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/complete-todo.command';
+ import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+ import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
+@@ -68,15 +72,43 @@ export class TodoController {
+ 
+   @Get()
+   @ApiOperation({ summary: 'Get all todos' })
+-  @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
+-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
++  @ApiResponse({
++    status: 200,
++    type: GetAllTodosResponseDto,
++    description: 'Returns all todos',
++  })
++  @ApiQuery({
++    name: 'page',
++    required: false,
++    type: Number,
++    minimum: 1,
++    default: 1,
++  })
++  @ApiQuery({
++    name: 'limit',
++    required: false,
++    type: Number,
++    minimum: 1,
++    maximum: 100,
++    default: 20,
++  })
++  @ApiQuery({
++    name: 'status',
++    required: false,
++    enum: ['all', 'completed', 'active'],
++  })
++  @ApiResponse({ status: 400, description: 'Invalid query parameters' })
++  async getAll(@Query() query: Record<string, unknown>) {
++    const { page, limit, status } = parseTodoListQuery(query);
+     const results = await this.queryBus.request(
+-      new GetTodosQuery(limit, offset),
++      new GetTodosQuery(page, limit, status),
+     );
+     if (results.isOk) {
+       const data = results.data;
+-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
+-      return new GetAllTodosResponseDto(todos);
++      const todos: TodoReadModel[] = data.items.map((todo) =>
++        TodoReadModel.fromPrimitives(todo),
++      );
++      return new GetAllTodosResponseDto(todos, data.total, page, limit);
+     } else {
+       throw new HttpException(
+         results.error?.message || 'Failed to fetch todos',
+@@ -134,7 +166,10 @@ export class TodoController {
+   @ApiResponse({ status: 204, description: 'Todo title updated' })
+   @ApiResponse({ status: 400, description: 'Invalid input' })
+   @ApiResponse({ status: 404, description: 'Todo not found' })
+-  async modifyTitle(@Param('id') id: string, @Body() dto: ModifyTodoTitleRequestDto) {
++  async modifyTitle(
++    @Param('id') id: string,
++    @Body() dto: ModifyTodoTitleRequestDto,
++  ) {
+     const command = new ModifyTodoTitleCommand({
+       id,
+       title: dto.title,
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.integration.test.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.integration.test.ts
+new file mode 100644
+index 0000000..e715c6e
+--- /dev/null
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.integration.test.ts
+@@ -0,0 +1,89 @@
++import { asyncLocalStorage } from 'ddd-tactical-core-boilerplate';
++import { Pool } from 'pg';
++import { TodoReadRepository } from '../todo-read.repository';
++import { TODO_POSTGRES_SCHEMA } from '../todo-postgres.schema';
++
++const describeDatabase =
++  process.env.RUN_DATABASE_TESTS === 'true' ? describe : describe.skip;
++describeDatabase('Todo list PostgreSQL query', () => {
++  const pool = new Pool({
++    host: process.env.PG_HOST ?? 'localhost',
++    port: Number(process.env.PG_PORT ?? 5432),
++    database: process.env.PG_DATABASE ?? 'bitloops_test',
++    user: process.env.PG_USER ?? 'user',
++    password: process.env.PG_PASSWORD ?? 'postgres',
++  });
++  const userId = '10000000-0000-4000-8000-000000000001';
++  const otherUserId = '10000000-0000-4000-8000-000000000002';
++  const repository = new TodoReadRepository(pool);
++  beforeAll(async () => {
++    await pool.query(TODO_POSTGRES_SCHEMA);
++    await pool.query(
++      'DELETE FROM todo_projection WHERE user_id = ANY($1::uuid[])',
++      [[userId, otherUserId]],
++    );
++    for (let n = 1; n <= 6; n++) {
++      await pool.query(
++        `INSERT INTO todo_projection (id, user_id, title, completed, version, created_at)
++        VALUES ($1, $2, $3, $4, 1, '2026-01-01')`,
++        [
++          `20000000-0000-4000-8000-00000000000${n}`,
++          n === 6 ? otherUserId : userId,
++          `Task ${n}`,
++          n % 2 === 0,
++        ],
++      );
++    }
++  });
++  beforeEach(() => {
++    jest
++      .mocked(asyncLocalStorage.getStore)
++      .mockReturnValue(new Map([['context', { userId }]]));
++  });
++  afterAll(async () => {
++    await pool.query(
++      'DELETE FROM todo_projection WHERE user_id = ANY($1::uuid[])',
++      [[userId, otherUserId]],
++    );
++    await pool.end();
++  });
++  it.each([
++    ['all', 1, 5, ['Task 1', 'Task 2']],
++    ['all', 2, 5, ['Task 3', 'Task 4']],
++    ['completed', 1, 2, ['Task 2', 'Task 4']],
++    ['active', 2, 3, ['Task 5']],
++    ['completed', 9, 2, []],
++  ] as const)(
++    'filters %s page %s before pagination and isolates the user',
++    async (status, page, total, titles) => {
++      const result = await repository.getAll({ page, limit: 2, status });
++      if (result.isFail()) throw result.value;
++      expect(result.value).toMatchObject({ page, limit: 2, total });
++      expect(result.value.items.map((item) => item.title)).toEqual(titles);
++      expect(result.value.items.every((item) => item.userId === userId)).toBe(
++        true,
++      );
++    },
++  );
++  it('returns no tasks for a user without tasks', async () => {
++    jest
++      .mocked(asyncLocalStorage.getStore)
++      .mockReturnValue(
++        new Map([
++          ['context', { userId: '10000000-0000-4000-8000-000000000003' }],
++        ]),
++      );
++    const result = await repository.getAll({
++      page: 1,
++      limit: 20,
++      status: 'all',
++    });
++    expect(result.value).toEqual({ items: [], total: 0, page: 1, limit: 20 });
++  });
++  it('fails closed without authenticated context', async () => {
++    jest.mocked(asyncLocalStorage.getStore).mockReturnValue(undefined);
++    expect(
++      (await repository.getAll({ page: 1, limit: 20, status: 'all' })).isFail(),
++    ).toBe(true);
++  });
++});
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+index 9909992..9c1d4b2 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+@@ -8,11 +8,12 @@ import { Inject, Injectable } from '@nestjs/common';
+ import { Pool, QueryResultRow } from 'pg';
+ 
+ import { constants } from '@lib/infra/postgres';
++import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+ import {
+-  TodoReadModel,
+-  TTodoReadModelSnapshot,
+-} from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+-import { TodoReadRepoPort } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
++  TodoReadRepoPort,
++  TodoPage,
++  TodoPageOptions,
++} from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+ 
+ type TodoProjectionRow = QueryResultRow & {
+   id: string;
+@@ -45,47 +46,45 @@ export class TodoReadRepository implements TodoReadRepoPort {
+   }
+ 
+   @Application.Repo.Decorators.ReturnUnexpectedError()
+-  async getAll(params?: {
+-    limit?: number;
+-    offset?: number;
+-  }): Promise<Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>> {
++  async getAll(
++    params: TodoPageOptions,
++  ): Promise<Either<TodoPage, Application.Repo.Errors.Unexpected>> {
+     const userId = this.authenticatedUserId();
+-    const limit = this.normaliseInteger(params?.limit, 50, 1, 100);
+-    const offset = this.normaliseInteger(params?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+-    const result = await this.pool.query<TodoProjectionRow>(
+-      `SELECT
+-         id::text,
+-         user_id::text AS "userId",
+-         title,
+-         completed
+-       FROM todo_projection
+-       WHERE user_id = $1
+-       ORDER BY updated_at DESC, id
+-       LIMIT $2 OFFSET $3`,
+-      [userId, limit, offset],
++    const { page, limit, status } = params;
++    // Count and page share one database snapshot, including for an empty page.
++    const result = await this.pool.query<{
++      items: TodoPage['items'];
++      total: number;
++    }>(
++      `WITH filtered AS (
++         SELECT id, user_id, title, completed, created_at
++         FROM todo_projection
++         WHERE user_id = $1 AND ($2::boolean IS NULL OR completed = $2)
++       ), page_items AS (
++         SELECT id::text, user_id::text AS "userId", title, completed, created_at
++         FROM filtered ORDER BY created_at DESC, id ASC LIMIT $3 OFFSET $4
++       )
++       SELECT (SELECT count(*)::integer FROM filtered) AS total,
++         COALESCE((SELECT jsonb_agg(
++           jsonb_build_object('id', id, 'userId', "userId", 'title', title, 'completed', completed)
++           ORDER BY created_at DESC, id ASC
++         ) FROM page_items), '[]'::jsonb) AS items`,
++      [
++        userId,
++        status === 'all' ? null : status === 'completed',
++        limit,
++        ((BigInt(page) - BigInt(1)) * BigInt(limit)).toString(),
++      ],
+     );
+-
+-    return ok(result.rows);
++    return ok({ ...result.rows[0], page, limit });
+   }
+ 
+   private authenticatedUserId(): string {
+     const context = asyncLocalStorage.getStore()?.get('context') as
+-      | { userId?: unknown }
+-      | undefined;
++      { userId?: unknown } | undefined;
+     if (typeof context?.userId !== 'string') {
+       throw new Error('Missing authenticated request context');
+     }
+     return context.userId;
+   }
+-
+-  private normaliseInteger(
+-    value: number | undefined,
+-    fallback: number,
+-    minimum: number,
+-    maximum: number,
+-  ): number {
+-    const parsed = Number(value);
+-    if (!Number.isInteger(parsed)) return fallback;
+-    return Math.min(maximum, Math.max(minimum, parsed));
+-  }
+ }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
+index 2f2f75e..1c77a28 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
+@@ -1,23 +1,24 @@
+ import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
+ import { Inject } from '@nestjs/common';
+-// import { QueryHandler } from '@nestjs/cqrs';
+-import { TTodoReadModelSnapshot } from '../../domain/todo.read-model';
++import { TodoPage } from '../../ports/todo-read.repo-port';
+ import { TodoReadRepoPort } from '../../ports/todo-read.repo-port';
+ import { GetTodosQuery } from '../../queries/get-todos.query';
+ import { Traceable } from '@lib/infra/telemetry';
+ import { TodoReadRepoPortToken } from '../../constants';
+ 
+ export type GetTodosQueryHandlerResponse = Either<
+-  TTodoReadModelSnapshot[],
++  TodoPage,
+   Application.Repo.Errors.Unexpected
+ >;
+ 
+-export class GetTodosHandler
+-  implements Application.IQueryHandler<GetTodosQuery, TTodoReadModelSnapshot[]> {
++export class GetTodosHandler implements Application.IQueryHandler<
++  GetTodosQuery,
++  TodoPage
++> {
+   constructor(
+     @Inject(TodoReadRepoPortToken)
+     private readonly todoRepo: TodoReadRepoPort,
+-  ) { }
++  ) {}
+ 
+   get query() {
+     return GetTodosQuery;
+@@ -36,36 +37,9 @@ export class GetTodosHandler
+     },
+   })
+   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
+-    const { limit, offset } = query;
+-    const results = await this.todoRepo.getAll({ limit, offset });
++    const { page, limit, status } = query;
++    const results = await this.todoRepo.getAll({ page, limit, status });
+     if (results.isFail()) return fail(results.value);
+-    if (results.value) return ok(results.value);
+-    return ok([]);
++    return ok(results.value);
+   }
+ }
+-
+-// @QueryHandler(GetTodosQuery)
+-// export class GetTodosHandler
+-//   implements
+-//     Application.IQueryHandler<
+-//       GetTodosQuery,
+-//       Promise<GetTodosQueryHandlerResponse>
+-//     >
+-// {
+-//   get query() {
+-//     return GetTodosQuery;
+-//   }
+-
+-//   get boundedContext() {
+-//     return 'Todo';
+-//   }
+-//   constructor(
+-//     @Inject(TodoReadRepoPortToken) private todoRepo: TodoReadRepoPort,
+-//   ) {}
+-
+-//   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
+-//     const todos = await this.todoRepo.getAll(query.ctx);
+-//     if (todos) return ok(todos);
+-//     return ok([]);
+-//   }
+-// }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+index 6115a90..77160b6 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+@@ -1,15 +1,23 @@
+ import { Application, Either } from 'ddd-tactical-core-boilerplate';
+ import { TTodoReadModelSnapshot } from '../domain/todo.read-model.js';
+ 
+-export interface TodoReadRepoPort
+-  extends Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot> {
+-  getAll(params?: {
+-    limit?: number;
+-    offset?: number;
+-  }): Promise<
+-    Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>
+-  >;
++export type TodoStatus = 'all' | 'completed' | 'active';
++export interface TodoPageOptions {
++  page: number;
++  limit: number;
++  status: TodoStatus;
++}
++export interface TodoPage {
++  items: TTodoReadModelSnapshot[];
++  total: number;
++  page: number;
++  limit: number;
++}
++export interface TodoReadRepoPort extends Omit<
++  Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot>,
++  'getAll'
++> {
++  getAll(
++    params: TodoPageOptions,
++  ): Promise<Either<TodoPage, Application.Repo.Errors.Unexpected>>;
+ }
+-// export interface ITodoReadRepository {
+-//   findAll(): Promise<TodoReadModel[]>;
+-// }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
+index f896faa..2c702bf 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
+@@ -1,7 +1,12 @@
+ import { Application } from 'ddd-tactical-core-boilerplate';
++import { TodoStatus } from '../ports/todo-read.repo-port';
+ 
+ export class GetTodosQuery extends Application.Query {
+-  constructor(public readonly limit?: number, public readonly offset?: number) {
++  constructor(
++    public readonly page = 1,
++    public readonly limit = 20,
++    public readonly status: TodoStatus = 'all',
++  ) {
+     super('Todo');
+   }
+ }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
+index 4b5c3eb..2f3a81d 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
+@@ -31,7 +31,10 @@ export class MockGetTodosReadRepo {
+   private getMockGetAllMethod(): jest.Mock {
+     return jest.fn(
+       (): Promise<
+-        Either<TodoReadModel[] | null, Application.Repo.Errors.Unexpected>
++        Either<
++          import('../../../ports/todo-read.repo-port').TodoPage,
++          Application.Repo.Errors.Unexpected
++        >
+       > => {
+         const ctx = asyncLocalStorage.getStore()?.get('context');
+         if (ctx.userId === GET_TODOS_SUCCESS_CASE.userId) {
+@@ -42,13 +45,15 @@ export class MockGetTodosReadRepo {
+             id: titleId,
+             completed,
+           });
+-          return Promise.resolve(ok([todo]));
++          return Promise.resolve(
++            ok({ items: [todo.props], total: 1, page: 1, limit: 20 }),
++          );
+         } else if (ctx.userId === GET_TODOS_REPO_ERROR_CASE.userId) {
+           return Promise.resolve(
+             fail(new Application.Repo.Errors.Unexpected('Unexpected error')),
+           );
+         }
+-        return Promise.resolve(ok(null));
++        return Promise.resolve(ok({ items: [], total: 0, page: 1, limit: 20 }));
+       },
+     );
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
+index 476553f..2282d36 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
+@@ -33,8 +33,17 @@ describe('Get todos feature test', () => {
+       .withUserId(userId)
+       .build();
+ 
+-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
+-    expect(result.value).toEqual([todoReadModel]);
++    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
++      page: 1,
++      limit: 20,
++      status: 'all',
++    });
++    expect(result.value).toEqual({
++      items: [todoReadModel.props],
++      total: 1,
++      page: 1,
++      limit: 20,
++    });
+   });
+ 
+   it('Get all todos successfully, empty array', async () => {
+@@ -52,8 +61,12 @@ describe('Get todos feature test', () => {
+     const result = await getTodosHandler.execute(getTodosQuery);
+ 
+     //then
+-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
+-    expect(result.value).toEqual([]);
++    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
++      page: 1,
++      limit: 20,
++      status: 'all',
++    });
++    expect(result.value).toEqual({ items: [], total: 0, page: 1, limit: 20 });
+   });
+ 
+   it('Failed to get all todos, repo error', async () => {
+@@ -71,7 +84,11 @@ describe('Get todos feature test', () => {
+     const result = await getTodosHandler.execute(getTodosQuery);
+ 
+     //then
+-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
++    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
++      page: 1,
++      limit: 20,
++      status: 'all',
++    });
+     expect(result.value).toBeInstanceOf(Application.Repo.Errors.Unexpected);
+   });
+ });
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
+index 26db001..1033558 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
+@@ -34,7 +34,10 @@ export type GetAllTodosResponseDto = {
+     /**
+      * Array of todo items
+      */
+-    todos: Array<TodoDto>;
++    items: Array<TodoDto>;
++    total: number;
++    page: number;
++    limit: number;
+ };
+ 
+ export type ModifyTodoTitleRequestDto = {
+@@ -67,9 +70,10 @@ export type AuthControllerMeResponses = {
+ export type TodoControllerGetAllData = {
+     body?: never;
+     path?: never;
+-    query: {
+-        limit: number;
+-        offset: number;
++    query?: {
++        limit?: number;
++        page?: number;
++        status?: 'all' | 'completed' | 'active';
+     };
+     url: '/todos';
+ };
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelComponent.tsx b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelComponent.tsx
+index c7d1da2..30ec139 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelComponent.tsx
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelComponent.tsx
+@@ -1,3 +1,4 @@
++import type { TodoStatus } from '../../../infra/interfaces/ITodoRepository';
+ import { type JSX } from 'react';
+ import { Button, HStack, Input, VStack } from '@chakra-ui/react';
+ import { Tooltip } from '../../ui/Tooltip';
+@@ -11,7 +12,14 @@ interface TodoProps {
+   newTodoTitle: string;
+   setNewTodoTitle: React.Dispatch<React.SetStateAction<string>>;
+   addItem: () => void;
+-  onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
++  page: number;
++  totalPages: number;
++  total: number;
++  status: TodoStatus;
++  loading: boolean;
++  error: string | null;
++  onPageChange: (page: number) => void;
++  onStatusChange: (status: TodoStatus) => void;
+ }
+ 
+ const vStackProps = {
+@@ -25,7 +33,7 @@ const vStackProps = {
+ };
+ 
+ function TodoPanel(props: TodoProps): JSX.Element {
+-  const { data, newTodoTitle, setNewTodoTitle, addItem, onScroll } = props;
++  const { data, newTodoTitle, setNewTodoTitle, addItem } = props;
+ 
+   return (
+     <div className="container">
+@@ -49,7 +57,6 @@ function TodoPanel(props: TodoProps): JSX.Element {
+               onChange={(e) => {
+                 setNewTodoTitle((e.target as HTMLInputElement).value);
+               }}
+-              onKeyDown={(e) => e.key === 'Enter' && addItem()}
+             />
+             <Tooltip content="Add Todo">
+               <Button type="submit" colorScheme="green" px="8">
+@@ -58,15 +65,44 @@ function TodoPanel(props: TodoProps): JSX.Element {
+             </Tooltip>
+           </HStack>
+         </form>
++        <label>
++          Status
++          <select
++            aria-label="Todo status"
++            value={props.status}
++            onChange={(event) => props.onStatusChange(event.target.value as TodoStatus)}
++          >
++            <option value="all">All</option>
++            <option value="completed">Completed</option>
++            <option value="active">Active</option>
++          </select>
++        </label>
++        {props.error && <p role="alert">{props.error}</p>}
++        {props.loading && <p role="status">Loading…</p>}
+         <div
+           className="todo-list"
+           style={{ height: 300, overflowY: 'auto' }}
+-          onScroll={onScroll}
++          aria-busy={props.loading}
+         >
+-          <ul>
+-            {data && data.map((id) => <TodoElement key={id} id={id} />)}
+-          </ul>
++          <ul>{data && data.map((id) => <TodoElement key={id} id={id} />)}</ul>
+         </div>
++        <HStack>
++          <Button
++            disabled={props.loading || props.page <= 1}
++            onClick={() => props.onPageChange(props.page - 1)}
++          >
++            Previous
++          </Button>
++          <span>
++            Page {props.page} of {props.totalPages} · {props.total} todos
++          </span>
++          <Button
++            disabled={props.loading || props.page >= props.totalPages}
++            onClick={() => props.onPageChange(props.page + 1)}
++          >
++            Next
++          </Button>
++        </HStack>
+       </VStack>
+     </div>
+   );
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
+index 6656190..06fa8a0 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
+@@ -1,41 +1,36 @@
+-import { useState, type JSX, type UIEvent } from 'react';
++import { useState, type JSX } from 'react';
+ 
+ import TodoPanelComponent from './TodoPanelComponent';
+ import { useDispatch, useSelector } from 'react-redux';
+ import type { AppDispatch, RootState } from '../../../store/store';
+-import { addTodo, loadMoreTodos } from '../../../store/todo/todoSlice';
++import { addTodo, loadTodoPage } from '../../../store/todo/todoSlice';
+ 
+ function TodoPanelController(): JSX.Element {
+   const [newTodoTitle, setNewTodoTitle] = useState<string>('');
+-  const { todoIdsState } = useSelector((state: RootState) => state.todo)
++  const { todoIdsState, page, limit, total, status, loading, error } = useSelector(
++    (state: RootState) => state.todo
++  );
+   const dispatch = useDispatch<AppDispatch>();
+ 
+-
+-  const loadTodos = async () => {
+-    dispatch(loadMoreTodos({ offset: todoIdsState.length, limit: 5 }));
+-  };
+-
+   const addItem = () => {
+-    if (newTodoTitle) dispatch(addTodo(newTodoTitle))
++    if (newTodoTitle) dispatch(addTodo(newTodoTitle));
+     setNewTodoTitle('');
+   };
+ 
+-  const handleScroll = (e: UIEvent<HTMLDivElement>) => {
+-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+-    if (scrollHeight - scrollTop - clientHeight < 50) {
+-      loadTodos();
+-    }
+-    console.log(scrollHeight - scrollTop - clientHeight < 50);
+-
+-  };
+-
+   return (
+     <TodoPanelComponent
+       data={todoIdsState}
+       newTodoTitle={newTodoTitle}
+       setNewTodoTitle={setNewTodoTitle}
+       addItem={addItem}
+-      onScroll={handleScroll}
++      page={page}
++      totalPages={Math.max(1, Math.ceil(total / limit))}
++      total={total}
++      status={status}
++      loading={loading}
++      error={error}
++      onPageChange={(page) => void dispatch(loadTodoPage({ page }))}
++      onStatusChange={(status) => void dispatch(loadTodoPage({ page: 1, status }))}
+     />
+   );
+ }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+index 12c147d..399a1e4 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+@@ -1,30 +1,16 @@
+ import { type Todo } from '../../models/Todo';
+-
+-type GetAllTodoSuccessResponse = {
+-  status: 'success';
+-  todos: Todo[];
+-  error: undefined;
++export type TodoStatus = 'all' | 'completed' | 'active';
++export type TodoPage = {
++  items: Todo[];
++  total: number;
++  page: number;
++  limit: number;
+ };
+-
+-type GetAllTodoCachedResponse = {
+-  status: 'cached';
+-  todos: Todo[];
+-  error: undefined;
+-};
+-
+-type GetAllTodoErrorResponse = {
+-  status: 'error';
+-  error: string;
+-  todos: undefined;
+-};
+-
+ export type GetAllTodoResponse =
+-  | GetAllTodoSuccessResponse
+-  | GetAllTodoCachedResponse
+-  | GetAllTodoErrorResponse;
+-
++  ({ status: 'success'; error: undefined } & TodoPage) | { status: 'error'; error: string };
+ export interface ITodoRepository {
+-  getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse>; modifyTodoTitle(id: string, title: string): Promise<void>;
++  getAllTodo(page?: number, limit?: number, status?: TodoStatus): Promise<GetAllTodoResponse>;
++  modifyTodoTitle(id: string, title: string): Promise<void>;
+   completeTodo(id: string): Promise<void>;
+   uncompleteTodo(id: string): Promise<void>;
+   deleteTodo(id: string): Promise<void>;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/mappers/TodoMapper.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/mappers/TodoMapper.ts
+index 0d9dd76..7ecf413 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/mappers/TodoMapper.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/mappers/TodoMapper.ts
+@@ -64,14 +64,50 @@ export function mapExternalTodoLifecycleEvent(value: unknown): TodoLifecycleEven
+     case 'todo.added':
+       return { eventName: 'onAdded', payload: mapExternalTodo(envelope.data) };
+     case 'todo.deleted':
+-      return { eventName: 'onDeleted', payload: mapTodoIdentifier(envelope.data) };
++      return {
++        eventName: 'onDeleted',
++        payload: mapTodoIdentifier(envelope.data),
++      };
+     case 'todo.modified_title':
+-      return { eventName: 'onModifiedTitle', payload: mapTodoTitleUpdate(envelope.data) };
++      return {
++        eventName: 'onModifiedTitle',
++        payload: mapTodoTitleUpdate(envelope.data),
++      };
+     case 'todo.completed':
+-      return { eventName: 'onCompleted', payload: mapTodoIdentifier(envelope.data) };
++      return {
++        eventName: 'onCompleted',
++        payload: mapTodoIdentifier(envelope.data),
++      };
+     case 'todo.uncompleted':
+-      return { eventName: 'onUncompleted', payload: mapTodoIdentifier(envelope.data) };
++      return {
++        eventName: 'onUncompleted',
++        payload: mapTodoIdentifier(envelope.data),
++      };
+     default:
+       return null;
+   }
+ }
++
++export function mapExternalTodoPage(
++  value: unknown
++): import('../interfaces/ITodoRepository').TodoPage {
++  const page = asRecord(value, 'todo page');
++  if (
++    !Array.isArray(page.items) ||
++    !Number.isSafeInteger(page.total) ||
++    Number(page.total) < 0 ||
++    !Number.isSafeInteger(page.page) ||
++    Number(page.page) < 1 ||
++    !Number.isSafeInteger(page.limit) ||
++    Number(page.limit) < 1 ||
++    Number(page.limit) > 100
++  ) {
++    throw new Error('Invalid todo page');
++  }
++  return {
++    items: page.items.map(mapExternalTodo),
++    total: Number(page.total),
++    page: Number(page.page),
++    limit: Number(page.limit),
++  };
++}
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
+index 552bc30..ad01c86 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
+@@ -8,11 +8,12 @@ import {
+ } from '../../../api/sdk.gen';
+ import { type User } from '../../../models/User';
+ import { EventBus, Events } from '../../../Events';
+-import { type GetAllTodoResponse, type ITodoRepository } from '../../interfaces/ITodoRepository';
+ import {
+-  mapExternalTodo,
+-  mapExternalTodoLifecycleEvent,
+-} from '../../mappers/TodoMapper';
++  type TodoStatus,
++  type GetAllTodoResponse,
++  type ITodoRepository,
++} from '../../interfaces/ITodoRepository';
++import { mapExternalTodoPage, mapExternalTodoLifecycleEvent } from '../../mappers/TodoMapper';
+ 
+ import { client } from '../../../api/client.gen';
+ import { TODO_URL } from '../../../config';
+@@ -87,7 +88,10 @@ class TodoRepository implements ITodoRepository {
+   }
+ 
+   async modifyTodoTitle(id: string, title: string): Promise<void> {
+-    const response = await todoControllerModifyTitle({ path: { id }, body: { id, title } });
++    const response = await todoControllerModifyTitle({
++      path: { id },
++      body: { id, title },
++    });
+     if (response.error) {
+       throw new Error((response as { error: string }).error);
+     }
+@@ -114,18 +118,20 @@ class TodoRepository implements ITodoRepository {
+     }
+   }
+ 
+-  async getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse> {
++  async getAllTodo(page = 1, limit = 20, status: TodoStatus = 'all'): Promise<GetAllTodoResponse> {
+     try {
+-      const response = await todoControllerGetAll({ query: { limit, offset } });
++      const response = await todoControllerGetAll({
++        query: { page, limit, status },
++      });
++      if (response.error || !response.data) throw new Error('Failed to fetch todos');
+       return {
+         status: 'success',
+-        todos: response.data?.todos?.map(mapExternalTodo) ?? [],
++        ...mapExternalTodoPage(response.data),
+         error: undefined,
+       };
+     } catch (error) {
+       return {
+         status: 'error',
+-        todos: undefined,
+         error: error instanceof Error ? error.message : 'Unknown error',
+       };
+     }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoReducer.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoReducer.ts
+index ffe6907..1852fd6 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoReducer.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoReducer.ts
+@@ -1,21 +1,39 @@
+ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+ 
+ import type { TodoIdentifier, TodoTitleUpdate } from '../../infra/mappers/TodoMapper';
++import type { TodoPage, TodoStatus } from '../../infra/interfaces/ITodoRepository';
+ import type { Todo } from '../../models/Todo';
+ 
+ interface TodoState {
++  page: number;
++  limit: number;
++  total: number;
++  status: TodoStatus;
++  requestId: string | null;
++  loading: boolean;
++  error: string | null;
+   todosState: Todo[];
+   todoIdsState: string[];
+ }
+ 
+ const initialState: TodoState = {
++  page: 1,
++  limit: 20,
++  total: 0,
++  status: 'all',
++  requestId: null,
++  loading: false,
++  error: null,
+   todosState: [],
+   todoIdsState: [],
+ };
+ 
+ type TodoStateChange =
+   | { type: 'init' | 'onAdded'; todos: Todo[] }
+-  | { type: 'onDeleted' | 'onCompleted' | 'onUncompleted'; todos: TodoIdentifier[] }
++  | {
++      type: 'onDeleted' | 'onCompleted' | 'onUncompleted';
++      todos: TodoIdentifier[];
++    }
+   | { type: 'onModifiedTitle'; todos: TodoTitleUpdate[] };
+ 
+ // Keep accepting the original full-Todo action shape while callers migrate to
+@@ -26,6 +44,34 @@ const todoSlice = createSlice({
+   name: 'todo',
+   initialState,
+   reducers: {
++    pageRequested(
++      state,
++      action: PayloadAction<{
++        page: number;
++        status: TodoStatus;
++        requestId: string;
++      }>
++    ) {
++      if (state.page !== action.payload.page || state.status !== action.payload.status) {
++        state.todosState = [];
++        state.todoIdsState = [];
++      }
++      Object.assign(state, action.payload);
++      state.loading = true;
++      state.error = null;
++    },
++    pageReceived(state, action: PayloadAction<TodoPage & { requestId: string }>) {
++      if (state.requestId !== action.payload.requestId) return;
++      const { items, total, page, limit } = action.payload;
++      state.todosState = items;
++      state.todoIdsState = items.map((todo) => todo.id);
++      Object.assign(state, { total, page, limit, loading: false });
++    },
++    pageFailed(state, action: PayloadAction<{ requestId: string; error: string }>) {
++      if (state.requestId !== action.payload.requestId) return;
++      state.loading = false;
++      state.error = action.payload.error;
++    },
+     setTodos(state, action: PayloadAction<SetTodosPayload>) {
+       const { type, todos } = action.payload;
+ 
+@@ -75,5 +121,6 @@ const todoSlice = createSlice({
+   },
+ });
+ 
+-export const { setTodos, setTodoIds, updateTodoTitle } = todoSlice.actions;
++export const { pageRequested, pageReceived, pageFailed, setTodos, setTodoIds, updateTodoTitle } =
++  todoSlice.actions;
+ export default todoSlice.reducer;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
+index 38fdf02..34248f6 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
+@@ -2,72 +2,53 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
+ 
+ import { EventBus, Events } from '../../Events';
+ import TodoRepository from '../../infra/repositories/todo';
+-import todoReducer, { setTodoIds, setTodos, updateTodoTitle } from './todoReducer';
++import type { RootState } from '../store';
++import type { TodoStatus } from '../../infra/interfaces/ITodoRepository';
++import todoReducer, {
++  pageRequested,
++  pageReceived,
++  pageFailed,
++  setTodoIds,
++  setTodos,
++  updateTodoTitle,
++} from './todoReducer';
+ 
+ const todoRepository = new TodoRepository();
+ let isSubscribedToTodoEvents = false;
+ 
+-export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
++export const loadTodoPage = createAsyncThunk<
++  void,
++  { page?: number; status?: TodoStatus },
++  { state: RootState; rejectValue: string }
++>('todo/loadTodoPage', async (options, { dispatch, getState, requestId, rejectWithValue }) => {
++  const current = getState().todo;
++  const page = options.page ?? current.page;
++  const status = options.status ?? current.status;
++  dispatch(pageRequested({ page, status, requestId }));
++  const response = await todoRepository.getAllTodo(page, current.limit, status);
++  if (response.status === 'error') {
++    dispatch(pageFailed({ requestId, error: response.error }));
++    return rejectWithValue(response.error);
++  }
++  // A deletion can remove the last item on the last page.
++  const lastPage = Math.max(1, Math.ceil(response.total / response.limit));
++  if (page > lastPage && getState().todo.requestId === requestId) {
++    await dispatch(loadTodoPage({ page: lastPage, status }));
++    return;
++  }
++  dispatch(pageReceived({ ...response, requestId }));
++});
++
++export const initTodos = createAsyncThunk<void, void, { state: RootState }>(
+   'todo/initTodos',
+-  async (_, { dispatch, rejectWithValue }) => {
++  async (_, { dispatch }) => {
+     if (!isSubscribedToTodoEvents) {
+-      EventBus.subscribe(
+-        Events.TODO_EVENT,
+-        (todoEvent) => {
+-          switch (todoEvent.eventName) {
+-            case 'onAdded':
+-              dispatch(setTodos({ type: 'onAdded', todos: [todoEvent.payload] }));
+-              break;
+-            case 'onDeleted':
+-              dispatch(setTodos({ type: 'onDeleted', todos: [todoEvent.payload] }));
+-              break;
+-            case 'onModifiedTitle':
+-              dispatch(setTodos({ type: 'onModifiedTitle', todos: [todoEvent.payload] }));
+-              break;
+-            case 'onCompleted':
+-              dispatch(setTodos({ type: 'onCompleted', todos: [todoEvent.payload] }));
+-              break;
+-            case 'onUncompleted':
+-              dispatch(setTodos({ type: 'onUncompleted', todos: [todoEvent.payload] }));
+-              break;
+-            default:
+-              break;
+-          }
+-        }
+-      );
++      EventBus.subscribe(Events.TODO_EVENT, () => {
++        void dispatch(loadTodoPage({}));
++      });
+       isSubscribedToTodoEvents = true;
+     }
+-
+-    try {
+-      const response = await todoRepository.getAllTodo(5, 0);
+-      if (response.status === 'success' && response.todos) {
+-        dispatch(setTodos({ type: 'init', todos: response.todos }));
+-        return;
+-      }
+-      return rejectWithValue(response.error ?? 'Unknown error');
+-    } catch (error) {
+-      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+-    }
+-  }
+-);
+-
+-export const loadMoreTodos = createAsyncThunk<
+-  void,
+-  { offset: number; limit: number },
+-  { rejectValue: string }
+->(
+-  'todo/loadMoreTodos',
+-  async ({ offset, limit }, { dispatch, rejectWithValue }) => {
+-    try {
+-      const response = await todoRepository.getAllTodo(limit, offset);
+-      if (response.status === 'success' && response.todos) {
+-        dispatch(setTodos({ type: 'onAdded', todos: response.todos }));
+-        return;
+-      }
+-      return rejectWithValue(response.error ?? 'Unknown error');
+-    } catch (error) {
+-      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+-    }
++    await dispatch(loadTodoPage({ page: 1, status: 'all' }));
+   }
+ );
+ 
+@@ -90,12 +71,9 @@ export const completeTodo = createAsyncThunk<void, string>('todo/completeTodo',
+   await todoRepository.completeTodo(id);
+ });
+ 
+-export const uncompleteTodo = createAsyncThunk<void, string>(
+-  'todo/uncompleteTodo',
+-  async (id) => {
+-    await todoRepository.uncompleteTodo(id);
+-  }
+-);
++export const uncompleteTodo = createAsyncThunk<void, string>('todo/uncompleteTodo', async (id) => {
++  await todoRepository.uncompleteTodo(id);
++});
+ 
+ export { setTodoIds, setTodos, updateTodoTitle };
+ export default todoReducer;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/features/step_definitions/todo.steps.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/features/step_definitions/todo.steps.ts
+index 28095b9..98ab39f 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/features/step_definitions/todo.steps.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/features/step_definitions/todo.steps.ts
+@@ -3,46 +3,47 @@ import assert from 'node:assert/strict';
+ import todoReducer, { setTodos } from '../../../src/store/todo/todoReducer';
+ import type { Todo } from '../../../src/models/Todo';
+ 
+-interface TodoState {
+-    todosState: Todo[];
+-    todoIdsState: string[];
+-}
++type TodoState = ReturnType<typeof todoReducer>;
+ 
+ interface TodoWorld {
+-    state: TodoState;
++  state: TodoState;
+ }
+ 
+ function parseTodosTable(table: DataTable): Todo[] {
+-    return table.hashes().map(row => ({
+-        id: row.id,
+-        title: row.title,
+-        isCompleted: row.completed === 'true',
+-    }));
++  return table.hashes().map((row) => ({
++    id: row.id,
++    title: row.title,
++    isCompleted: row.completed === 'true',
++  }));
+ }
+ 
+ Given('a fresh todo state', function (this: TodoWorld) {
+-    this.state = { todosState: [], todoIdsState: [] };
++  this.state = todoReducer(undefined, { type: 'test/init' });
+ });
+ 
+ Given('a todo state with:', function (this: TodoWorld, table: DataTable) {
+-    const todos = parseTodosTable(table);
+-    this.state = {
+-        todosState: todos,
+-        todoIdsState: todos.map(todo => todo.id),
+-    };
++  const todos = parseTodosTable(table);
++  this.state = {
++    ...todoReducer(undefined, { type: 'test/init' }),
++    todosState: todos,
++    todoIdsState: todos.map((todo) => todo.id),
++  };
+ });
+ 
+-When('a {string} setTodos event arrives with todos:', function (this: TodoWorld, type: string, table: DataTable) {
++When(
++  'a {string} setTodos event arrives with todos:',
++  function (this: TodoWorld, type: string, table: DataTable) {
+     const todos = parseTodosTable(table);
+     this.state = todoReducer(this.state, setTodos({ type, todos }));
+-});
++  }
++);
+ 
+ Then('the todosState should be:', function (this: TodoWorld, table: DataTable) {
+-    const expected = parseTodosTable(table);
+-    assert.deepStrictEqual(this.state.todosState, expected);
++  const expected = parseTodosTable(table);
++  assert.deepStrictEqual(this.state.todosState, expected);
+ });
+ 
+ Then('the todoIdsState should be:', function (this: TodoWorld, table: DataTable) {
+-    const expected = table.hashes().map(row => row.id);
+-    assert.deepStrictEqual(this.state.todoIdsState, expected);
++  const expected = table.hashes().map((row) => row.id);
++  assert.deepStrictEqual(this.state.todoIdsState, expected);
+ });
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/package.json b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/package.json
+index 02da3a1..02112a6 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/package.json
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/package.json
+@@ -6,7 +6,7 @@
+   "type": "module",
+   "scripts": {
+     "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:behaviour",
+-    "test:unit": "tsx --test unit/todoMapper.test.ts",
++    "test:unit": "tsx --test unit/*.test.ts",
+     "test:behaviour": "tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.json",
+     "typecheck": "tsc --noEmit --project tsconfig.json"
+   },
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/unit/todoPagination.test.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/unit/todoPagination.test.ts
+new file mode 100644
+index 0000000..eb47b88
+--- /dev/null
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/tests/unit/todoPagination.test.ts
+@@ -0,0 +1,49 @@
++import assert from 'node:assert/strict';
++import { describe, it } from 'node:test';
++import { mapExternalTodoPage } from '../../src/infra/mappers/TodoMapper';
++import reducer, { pageRequested, pageReceived, pageFailed } from '../../src/store/todo/todoReducer';
++
++describe('Todo pagination', () => {
++  it('maps items and retains pagination metadata', () => {
++    assert.deepEqual(
++      mapExternalTodoPage({
++        items: [{ id: '1', title: 'Test', completed: true }],
++        total: 12,
++        page: 2,
++        limit: 5,
++      }),
++      {
++        items: [{ id: '1', title: 'Test', isCompleted: true }],
++        total: 12,
++        page: 2,
++        limit: 5,
++      }
++    );
++  });
++  it('rejects the old response and malformed pages instead of displaying an empty list', () => {
++    for (const data of [{ todos: [] }, undefined, { items: [], page: 1, limit: 20, total: -1 }]) {
++      assert.throws(() => mapExternalTodoPage(data));
++    }
++  });
++  it('replaces a page and ignores responses for older requests', () => {
++    let state = reducer(undefined, pageRequested({ page: 1, status: 'all', requestId: 'first' }));
++    state = reducer(state, pageRequested({ page: 1, status: 'active', requestId: 'second' }));
++    const page = {
++      items: [{ id: 'a', title: 'Active', isCompleted: false }],
++      total: 1,
++      page: 1,
++      limit: 20,
++    };
++    state = reducer(state, pageReceived({ ...page, requestId: 'second' }));
++    state = reducer(state, pageReceived({ ...page, items: [], requestId: 'first' }));
++    state = reducer(state, pageFailed({ requestId: 'first', error: 'stale error' }));
++    assert.deepEqual(state.todoIdsState, ['a']);
++    assert.equal(state.status, 'active');
++    assert.equal(state.total, 1);
++    assert.equal(state.error, null);
++    state = reducer(state, pageRequested({ page: 2, status: 'active', requestId: 'third' }));
++    state = reducer(state, pageReceived({ ...page, items: [], page: 2, requestId: 'third' }));
++    assert.deepEqual(state.todosState, []);
++    assert.equal(state.page, 2);
++  });
++});
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/lab1/ddd-hexagonal-cqrs-es-eda b/lab1/ddd-hexagonal-cqrs-es-eda/lab1/ddd-hexagonal-cqrs-es-eda
+new file mode 100644
+index 0000000..e69de29
+diff --git a/lab1/skill.md b/lab1/skill.md
+deleted file mode 100644
+index 244471b..0000000
+--- a/lab1/skill.md
++++ /dev/null
+@@ -1,71 +0,0 @@
+-# Skill: Feature Development Workflow
+-
+-## Purpose
+-A step-by-step workflow for implementing or extending features. Refer to `AGENTS.md` for architectural rules.
+-
+----
+-
+-## Workflow
+-
+-### Step 1 — Locate Bounded Context
+-Identify the owning module. Do not place feature logic in shared/generic modules out of convenience.
+-
+-### Step 2 — Find a Similar Feature
+-Find an existing, structurally similar feature to use as a template for naming and directory layout.
+-
+-### Step 3 — Classify Operation
+-- **Command:** State-changing (`DTO -> Command -> Handler -> Domain -> Port -> Adapter`).
+-- **Query:** Read-only (`DTO -> Query -> Handler -> Read Model/Port -> DTO`).
+-
+-### Step 4 — Trace Dependency Flow
+-Verify all layers involved before writing code:
+-`Controller -> DTO -> Command/Query -> Handler -> Domain -> Port -> Adapter`
+-
+-### Step 5 — Design Minimal Changes
+-Extend existing DTOs, ports, and domain methods where possible instead of adding parallel abstractions.
+-
+-### Step 6 — Implement Logic in Domain
+-Keep orchestration in handlers and business validation within domain models.
+-
+-### Step 7 — Connect Infrastructure via Ports
+-Route all persistence and external network calls through existing or extended ports.
+-
+-### Step 8 — Handle Errors
+-Use existing domain errors for business rule violations; handle infrastructure exceptions at adapters.
+-
+-### Step 9 — Apply Events (If Applicable)
+-Use event-sourcing handlers for state changes or outbox publishing for integration events only when required.
+-
+-### Step 10 — Preserve External Contracts
+-Map domain models to external DTOs at controller boundaries.
+-
+-### Step 11 — Follow TypeScript Standards
+-Use explicit types, avoid `any`, and follow project formatting rules.
+-
+-### Step 12 — Add Tests
+-Add fast unit tests (with mocked ports) for success/failure paths and integration tests for real infrastructure dependencies.
+-
+-### Step 13 — Architectural Review
+-Review diff against the checklist below.
+-
+-### Step 14 — Verify
+-Run tests, linter, and type checks. Confirm all pass.
+-
+----
+-
+-## Checklist
+-
+-Pre-Implementation:
+-- [ ] Context and reference feature identified
+-- [ ] Command vs Query classified
+-
+-Implementation:
+-- [ ] Domain logic isolated from infrastructure
+-- [ ] Direct database access avoided in handlers/controllers
+-- [ ] Boundary DTOs used without exposing domain entities
+-- [ ] Existing ports, errors, and mappers extended where possible
+-
+-Completion:
+-- [ ] Unit and integration tests added
+-- [ ] Linters, type checks, and test suites executed and passing
+-- [ ] No unrelated refactoring included
+\ No newline at end of file

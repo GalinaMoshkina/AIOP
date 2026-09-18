@@ -39,7 +39,7 @@ export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
     }
 
     try {
-      const response = await todoRepository.getAllTodo(5, 0);
+      const response = await todoRepository.getAllTodo(1, 5);
       if (response.status === 'success' && response.todos) {
         dispatch(setTodos({ type: 'init', todos: response.todos }));
         return;
@@ -59,7 +59,8 @@ export const loadMoreTodos = createAsyncThunk<
   'todo/loadMoreTodos',
   async ({ offset, limit }, { dispatch, rejectWithValue }) => {
     try {
-      const response = await todoRepository.getAllTodo(limit, offset);
+      const page = Math.floor(offset / limit) + 1;
+      const response = await todoRepository.getAllTodo(page, limit);
       if (response.status === 'success' && response.todos) {
         dispatch(setTodos({ type: 'onAdded', todos: response.todos }));
         return;

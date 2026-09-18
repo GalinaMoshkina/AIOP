@@ -6,7 +6,7 @@ import {
   asyncLocalStorage,
 } from 'ddd-tactical-core-boilerplate';
 import { TodoReadModel } from '../../../domain/todo.read-model';
-import { TodoReadRepoPort } from '../../../ports/todo-read.repo-port';
+import { GetTodosResult, TodoReadRepoPort } from '../../../ports/todo-read.repo-port';
 import {
   GET_TODOS_REPO_ERROR_CASE,
   GET_TODOS_SUCCESS_CASE,
@@ -31,7 +31,7 @@ export class MockGetTodosReadRepo {
   private getMockGetAllMethod(): jest.Mock {
     return jest.fn(
       (): Promise<
-        Either<TodoReadModel[] | null, Application.Repo.Errors.Unexpected>
+        Either<GetTodosResult, Application.Repo.Errors.Unexpected>
       > => {
         const ctx = asyncLocalStorage.getStore()?.get('context');
         if (ctx.userId === GET_TODOS_SUCCESS_CASE.userId) {
@@ -42,13 +42,13 @@ export class MockGetTodosReadRepo {
             id: titleId,
             completed,
           });
-          return Promise.resolve(ok([todo]));
+          return Promise.resolve(ok({ items: [todo], total: 1 }));
         } else if (ctx.userId === GET_TODOS_REPO_ERROR_CASE.userId) {
           return Promise.resolve(
             fail(new Application.Repo.Errors.Unexpected('Unexpected error')),
           );
         }
-        return Promise.resolve(ok(null));
+        return Promise.resolve(ok({ items: [], total: 0 }));
       },
     );
   }

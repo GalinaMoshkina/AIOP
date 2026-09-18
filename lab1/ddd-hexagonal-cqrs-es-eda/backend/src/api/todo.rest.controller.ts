@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Patch,
@@ -34,6 +35,7 @@ import { GetTodosQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-t
 import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
 import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
 import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
+import { TodoStatusFilter } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
 
 @ApiTags('todos')
 @ApiBearerAuth()
@@ -69,20 +71,57 @@ export class TodoController {
   @Get()
   @ApiOperation({ summary: 'Get all todos' })
   @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
+  async getAll(
+    @Query('page') pageParam?: string,
+    @Query('limit') limitParam?: string,
+    @Query('status') statusParam?: string,
+  ) {
+    const page = this.parseIntegerQueryParam(pageParam, 'page', 1, 1);
+    const limit = this.parseIntegerQueryParam(limitParam, 'limit', 20, 1, 100);
+    const status = this.parseStatusQueryParam(statusParam);
     const results = await this.queryBus.request(
-      new GetTodosQuery(limit, offset),
+      new GetTodosQuery(page, limit, status),
     );
     if (results.isOk) {
       const data = results.data;
-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
-      return new GetAllTodosResponseDto(todos);
+      const todos: TodoReadModel[] = data.items.map((todo) => TodoReadModel.fromPrimitives(todo));
+      return new GetAllTodosResponseDto(todos, data.total, page, limit);
     } else {
       throw new HttpException(
         results.error?.message || 'Failed to fetch todos',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private parseIntegerQueryParam(
+    value: string | undefined,
+    name: string,
+    fallback: number,
+    minimum: number,
+    maximum?: number,
+  ): number {
+    if (value === undefined) return fallback;
+    if (!/^\d+$/.test(value)) {
+      throw new BadRequestException(`${name} must be an integer`);
+    }
+    const parsed = Number(value);
+    if (parsed < minimum || (maximum !== undefined && parsed > maximum)) {
+      throw new BadRequestException(
+        maximum === undefined
+          ? `${name} must be at least ${minimum}`
+          : `${name} must be between ${minimum} and ${maximum}`,
+      );
+    }
+    return parsed;
+  }
+
+  private parseStatusQueryParam(value: string | undefined): TodoStatusFilter {
+    if (value === undefined) return 'all';
+    if (value === 'all' || value === 'completed' || value === 'active') {
+      return value;
+    }
+    throw new BadRequestException('status must be all, completed or active');
   }
 
   @Patch(':id/complete')

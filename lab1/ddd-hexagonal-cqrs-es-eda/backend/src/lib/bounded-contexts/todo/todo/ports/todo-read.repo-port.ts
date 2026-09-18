@@ -1,13 +1,26 @@
 import { Application, Either } from 'ddd-tactical-core-boilerplate';
-import { TTodoReadModelSnapshot } from '../domain/todo.read-model.js';
+import {
+  TodoReadModel,
+  TTodoReadModelSnapshot,
+} from '../domain/todo.read-model.js';
+import { TodoStatusFilter } from '../queries/get-todos.query.js';
 
-export interface TodoReadRepoPort
-  extends Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot> {
+export type GetTodosResult = {
+  items: TTodoReadModelSnapshot[];
+  total: number;
+};
+
+export interface TodoReadRepoPort {
+  getById(
+    id: string,
+  ): Promise<Either<TodoReadModel | null, Application.Repo.Errors.Unexpected>>;
+
   getAll(params?: {
     limit?: number;
     offset?: number;
+    status?: TodoStatusFilter;
   }): Promise<
-    Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>
+    Either<GetTodosResult, Application.Repo.Errors.Unexpected>
   >;
 }
 // export interface ITodoReadRepository {

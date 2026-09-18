@@ -1,19 +1,19 @@
 import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
 import { Inject } from '@nestjs/common';
 // import { QueryHandler } from '@nestjs/cqrs';
-import { TTodoReadModelSnapshot } from '../../domain/todo.read-model';
 import { TodoReadRepoPort } from '../../ports/todo-read.repo-port';
 import { GetTodosQuery } from '../../queries/get-todos.query';
 import { Traceable } from '@lib/infra/telemetry';
 import { TodoReadRepoPortToken } from '../../constants';
+import { GetTodosResult } from '../../ports/todo-read.repo-port';
 
 export type GetTodosQueryHandlerResponse = Either<
-  TTodoReadModelSnapshot[],
+  GetTodosResult,
   Application.Repo.Errors.Unexpected
 >;
 
 export class GetTodosHandler
-  implements Application.IQueryHandler<GetTodosQuery, TTodoReadModelSnapshot[]> {
+  implements Application.IQueryHandler<GetTodosQuery, GetTodosResult> {
   constructor(
     @Inject(TodoReadRepoPortToken)
     private readonly todoRepo: TodoReadRepoPort,
@@ -36,11 +36,11 @@ export class GetTodosHandler
     },
   })
   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
-    const { limit, offset } = query;
-    const results = await this.todoRepo.getAll({ limit, offset });
+    const { page, limit, status } = query;
+    const offset = (page - 1) * limit;
+    const results = await this.todoRepo.getAll({ limit, offset, status });
     if (results.isFail()) return fail(results.value);
-    if (results.value) return ok(results.value);
-    return ok([]);
+    return ok(results.value);
   }
 }
 

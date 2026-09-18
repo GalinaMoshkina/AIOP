@@ -34,7 +34,19 @@ export type GetAllTodosResponseDto = {
     /**
      * Array of todo items
      */
-    todos: Array<TodoDto>;
+    items: Array<TodoDto>;
+    /**
+     * Total todo count matching the current filter
+     */
+    total: number;
+    /**
+     * Current page number
+     */
+    page: number;
+    /**
+     * Requested page size
+     */
+    limit: number;
 };
 
 export type ModifyTodoTitleRequestDto = {
@@ -68,8 +80,9 @@ export type TodoControllerGetAllData = {
     body?: never;
     path?: never;
     query: {
+        page?: number;
         limit: number;
-        offset: number;
+        status?: 'all' | 'completed' | 'active';
     };
     url: '/todos';
 };

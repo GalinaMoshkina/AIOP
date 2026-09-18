@@ -8,7 +8,11 @@ import {
 } from '../../../api/sdk.gen';
 import { type User } from '../../../models/User';
 import { EventBus, Events } from '../../../Events';
-import { type GetAllTodoResponse, type ITodoRepository } from '../../interfaces/ITodoRepository';
+import {
+  type GetAllTodoResponse,
+  type ITodoRepository,
+  type TodoStatusFilter,
+} from '../../interfaces/ITodoRepository';
 import {
   mapExternalTodo,
   mapExternalTodoLifecycleEvent,
@@ -114,12 +118,19 @@ class TodoRepository implements ITodoRepository {
     }
   }
 
-  async getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse> {
+  async getAllTodo(
+    page: number,
+    limit: number,
+    status: TodoStatusFilter = 'all'
+  ): Promise<GetAllTodoResponse> {
     try {
-      const response = await todoControllerGetAll({ query: { limit, offset } });
+      const response = await todoControllerGetAll({ query: { page, limit, status } });
       return {
         status: 'success',
-        todos: response.data?.todos?.map(mapExternalTodo) ?? [],
+        todos: response.data?.items?.map(mapExternalTodo) ?? [],
+        total: response.data?.total ?? 0,
+        page: response.data?.page ?? page,
+        limit: response.data?.limit ?? limit,
         error: undefined,
       };
     } catch (error) {

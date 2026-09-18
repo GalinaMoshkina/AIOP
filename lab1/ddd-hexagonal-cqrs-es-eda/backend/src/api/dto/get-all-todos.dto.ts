@@ -23,15 +23,27 @@ export class GetAllTodosResponseDto {
     type: [TodoDto],
     description: 'Array of todo items'
   })
-  todos: TodoDto[];
+  items: TodoDto[];
 
-  constructor(todos: TodoReadModel[]) {
-    this.todos = todos.map(todo => ({
+  @ApiProperty({ description: 'Total todo count matching the current filter' })
+  total: number;
+
+  @ApiProperty({ description: 'Current page number' })
+  page: number;
+
+  @ApiProperty({ description: 'Requested page size' })
+  limit: number;
+
+  constructor(todos: TodoReadModel[], total: number, page: number, limit: number) {
+    this.items = todos.map(todo => ({
       id: todo.id,
       title: todo.title,
       completed: todo.completed,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }));
+    this.total = total;
+    this.page = page;
+    this.limit = limit;
   }
 }

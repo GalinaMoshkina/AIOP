@@ -8,11 +8,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Pool, QueryResultRow } from 'pg';
 
 import { constants } from '@lib/infra/postgres';
+import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import {
-  TodoReadModel,
-  TTodoReadModelSnapshot,
-} from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
-import { TodoReadRepoPort } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+  GetTodosResult,
+  TodoReadRepoPort,
+} from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+import { TodoStatusFilter } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
 
 type TodoProjectionRow = QueryResultRow & {
   id: string;
@@ -48,24 +49,52 @@ export class TodoReadRepository implements TodoReadRepoPort {
   async getAll(params?: {
     limit?: number;
     offset?: number;
-  }): Promise<Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>> {
+    status?: TodoStatusFilter;
+  }): Promise<Either<GetTodosResult, Application.Repo.Errors.Unexpected>> {
     const userId = this.authenticatedUserId();
-    const limit = this.normaliseInteger(params?.limit, 50, 1, 100);
-    const offset = this.normaliseInteger(params?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const result = await this.pool.query<TodoProjectionRow>(
+    const limit = params?.limit ?? 20;
+    const offset = params?.offset ?? 0;
+    const status = params?.status ?? 'all';
+    const statusFilter =
+      status === 'all'
+        ? ''
+        : status === 'completed'
+          ? 'AND completed = TRUE'
+          : 'AND completed = FALSE';
+    const result = await this.pool.query<TodoProjectionRow & { total: string }>(
       `SELECT
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         COUNT(*) OVER() AS total
        FROM todo_projection
        WHERE user_id = $1
+       ${statusFilter}
        ORDER BY updated_at DESC, id
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
     );
 
-    return ok(result.rows);
+    if (result.rows.length > 0) {
+      return ok({
+        items: result.rows,
+        total: Number(result.rows[0].total),
+      });
+    }
+
+    const countResult = await this.pool.query<{ total: string }>(
+      `SELECT COUNT(*) AS total
+       FROM todo_projection
+       WHERE user_id = $1
+       ${statusFilter}`,
+      [userId],
+    );
+
+    return ok({
+      items: [],
+      total: Number(countResult.rows[0]?.total ?? 0),
+    });
   }
 
   private authenticatedUserId(): string {
@@ -78,14 +107,4 @@ export class TodoReadRepository implements TodoReadRepoPort {
     return context.userId;
   }
 
-  private normaliseInteger(
-    value: number | undefined,
-    fallback: number,
-    minimum: number,
-    maximum: number,
-  ): number {
-    const parsed = Number(value);
-    if (!Number.isInteger(parsed)) return fallback;
-    return Math.min(maximum, Math.max(minimum, parsed));
-  }
 }
