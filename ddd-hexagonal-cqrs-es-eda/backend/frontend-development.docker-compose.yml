@@ -1,0 +1,209 @@
+services:
+  todo-backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      HTTP_IP: 0.0.0.0
+      PG_HOST: bl-postgres
+      PG_DATABASE: bitloops
+      NATS_HOST: bl-nats
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8090/realms/bitloops}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-todo-api}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-todo-frontend}
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:-http://bl-keycloak:8080/realms/bitloops/protocol/openid-connect/certs}
+      OIDC_REQUIRE_VERIFIED_EMAIL: ${OIDC_REQUIRE_VERIFIED_EMAIL:-false}
+    ports:
+      - '8080:8080'
+    depends_on:
+      bl-postgres:
+        condition: service_healthy
+      bl-nats:
+        condition: service_started
+      bl-keycloak:
+        condition: service_healthy
+    networks:
+      - bitloops
+
+  bl-nats:
+    image: nats:latest
+    container_name: nats
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+      - '6222:6222'
+      - '4223:4223'
+      - '6223:6223'
+      - '8223:8223'
+    volumes:
+      - bl-nats_data:/usr/share/docker/nats-server
+    networks:
+      - bitloops
+    command: ['-js', '-m', '8223']
+
+  bl-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bitloops
+      POSTGRES_USER: user
+    ports:
+      - '5432:5432'
+    volumes:
+      - bl-postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U user -d bitloops']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bitloops
+
+  bl-keycloak-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-development-only}
+    volumes:
+      - bl-keycloak-postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U keycloak -d keycloak']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bitloops
+
+  bl-keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://bl-keycloak-postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-development-only}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin-development-only}
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8090}
+      KC_HEALTH_ENABLED: 'true'
+      KC_METRICS_ENABLED: 'true'
+    ports:
+      - '8090:8080'
+      - '9000:9000'
+    volumes:
+      - ../keycloak/bitloops-realm.json:/opt/keycloak/data/import/bitloops-realm.json:ro
+    depends_on:
+      bl-keycloak-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - bitloops
+
+  bl-prometheus-nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    ports:
+      - '7777:7777'
+    command:
+      ['-DV', '-gatewayz', '-connz', '-varz', '-jsz=all', 'http://bl-nats:8223']
+    networks:
+      - bitloops
+
+  bl-jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - '6831:6831'
+      - '6832:6832'
+      - '5778:5778'
+      - '16686:16686'
+      - '4317:4317'
+      - '4318:4318'
+      - '14250:14250'
+      - '14268:14268'
+      - '14269:14269'
+      - '9411:9411'
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=debug
+    networks:
+      - bitloops
+
+  bl-pushgateway:
+    image: prom/pushgateway
+    container_name: pushgateway
+    restart: unless-stopped
+    expose:
+      - 9091
+    ports:
+      - '9091:9091'
+    networks:
+      - bitloops
+    labels:
+      org.label-schema.group: 'monitoring'
+
+  bl-prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ../prometheus:/etc/prometheus/
+      - bl-prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    ports:
+      - '9090:9090'
+    networks:
+      - bitloops
+    labels:
+      org.label-schema.group: 'monitoring'
+
+  bl-grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    volumes:
+      - bl-grafana_data:/usr/share/Docker/grafana
+      - ../grafana/provisioning:/usr/share/docker/grafana/provisioning
+    environment:
+      - GF_SECURITY_opentelemetry_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+    ports:
+      - '3003:3000'
+    networks:
+      - bitloops
+    labels:
+      org.label-schema.group: 'monitoring'
+
+  bl-telemetry-consumer:
+    container_name: bl-telemetry-consumer
+    build:
+      context: ../telemetry-consumer
+    restart: unless-stopped
+    networks:
+      - bitloops
+
+volumes:
+  bl-nats_data:
+  bl-postgres_data:
+  bl-keycloak-postgres_data:
+  bl-prometheus_data:
+  bl-grafana_data:
+
+networks:
+  bitloops:

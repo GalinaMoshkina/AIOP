@@ -1,0 +1,17 @@
+packages:
+  - backend
+  - frontend
+  - frontend/tests
+overrides:
+  '@fastify/static': ^10.1.2
+  find-my-way: ^9.7.0
+  'js-yaml@>=5': ^5.2.2
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true
+  protobufjs: false
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - '@types/react-dom@19.2.4'
+  - '@types/react@19.2.18'
+  - ddd-tactical-core-boilerplate@2.0.0

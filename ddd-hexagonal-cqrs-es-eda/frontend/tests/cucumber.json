@@ -1,0 +1,12 @@
+{
+  "default": {
+    "import": ["features/**/*.ts"],
+    "paths": ["features/**/*.feature"],
+    "format": ["progress"],
+    "publish": false,
+    "parallel": 1,
+    "retry": 0,
+    "retryTagFilter": "",
+    "tags": ""
+  }
+}

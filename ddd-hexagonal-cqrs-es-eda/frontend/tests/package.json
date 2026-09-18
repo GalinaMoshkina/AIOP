@@ -1,0 +1,29 @@
+{
+  "name": "@bitloops/todo-frontend-behaviour-tests",
+  "version": "1.0.2",
+  "description": "Unit and behavioural tests for the todo frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:behaviour",
+    "test:unit": "tsx --test unit/todoMapper.test.ts",
+    "test:behaviour": "tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "engines": {
+    "node": "22 || 24 || >=26"
+  },
+  "keywords": [
+    "cucumber",
+    "bdd",
+    "typescript",
+    "redux"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@cucumber/cucumber": "^13.2.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "~6.0.3"
+  }
+}
