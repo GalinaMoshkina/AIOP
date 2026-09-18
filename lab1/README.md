@@ -24,3 +24,9 @@
 <img width="1044" height="511" alt="image" src="https://github.com/user-attachments/assets/4d9cb4bd-a015-419b-854b-8ebcd3bc1516" />  
 
 Попытка 2  
+Промт  
+```
+
+```
+<img width="1037" height="593" alt="image" src="https://github.com/user-attachments/assets/e59ac46a-726a-4eb8-83d3-bc3708ce893b" />  
+
