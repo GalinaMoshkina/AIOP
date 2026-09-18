@@ -26,7 +26,21 @@
 Попытка 2  
 Промт  
 ```
-
+Добавь пагинацию и фильтрацию в существующий API получения списка Todo.
+Требования:
+- page — целое число от 1, значение по умолчанию 1;
+- limit — целое число от 1 до 100, значение по умолчанию 20;
+- status — all, completed или active, значение по умолчанию all;
+- некорректные параметры должны возвращать HTTP 400;
+- ответ должен содержать items, total, page и limit;
+- total должен учитывать фильтр до применения пагинации;
+- пользователь должен получать только свои задачи;
+- результаты должны иметь стабильный порядок.
+Адаптируй фронтенд к изменённому формату ответа. Добавь необходимые тесты и запусти проверки.
 ```
-<img width="1037" height="593" alt="image" src="https://github.com/user-attachments/assets/e59ac46a-726a-4eb8-83d3-bc3708ce893b" />  
+<img width="1037" height="593" alt="image" src="https://github.com/user-attachments/assets/e59ac46a-726a-4eb8-83d3-bc3708ce893b" />   
+Попытка 3  
+Промт из AGENTS.md и skills.md  
+<img width="1036" height="614" alt="image" src="https://github.com/user-attachments/assets/b4de6bd3-1861-473a-8a90-c6d0abb950d5" />  
+
 
