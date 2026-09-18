@@ -1,21 +1,39 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import type { TodoIdentifier, TodoTitleUpdate } from '../../infra/mappers/TodoMapper';
+import type { TodoPage, TodoStatus } from '../../infra/interfaces/ITodoRepository';
 import type { Todo } from '../../models/Todo';
 
 interface TodoState {
+  page: number;
+  limit: number;
+  total: number;
+  status: TodoStatus;
+  requestId: string | null;
+  loading: boolean;
+  error: string | null;
   todosState: Todo[];
   todoIdsState: string[];
 }
 
 const initialState: TodoState = {
+  page: 1,
+  limit: 20,
+  total: 0,
+  status: 'all',
+  requestId: null,
+  loading: false,
+  error: null,
   todosState: [],
   todoIdsState: [],
 };
 
 type TodoStateChange =
   | { type: 'init' | 'onAdded'; todos: Todo[] }
-  | { type: 'onDeleted' | 'onCompleted' | 'onUncompleted'; todos: TodoIdentifier[] }
+  | {
+      type: 'onDeleted' | 'onCompleted' | 'onUncompleted';
+      todos: TodoIdentifier[];
+    }
   | { type: 'onModifiedTitle'; todos: TodoTitleUpdate[] };
 
 // Keep accepting the original full-Todo action shape while callers migrate to
@@ -26,6 +44,34 @@ const todoSlice = createSlice({
   name: 'todo',
   initialState,
   reducers: {
+    pageRequested(
+      state,
+      action: PayloadAction<{
+        page: number;
+        status: TodoStatus;
+        requestId: string;
+      }>
+    ) {
+      if (state.page !== action.payload.page || state.status !== action.payload.status) {
+        state.todosState = [];
+        state.todoIdsState = [];
+      }
+      Object.assign(state, action.payload);
+      state.loading = true;
+      state.error = null;
+    },
+    pageReceived(state, action: PayloadAction<TodoPage & { requestId: string }>) {
+      if (state.requestId !== action.payload.requestId) return;
+      const { items, total, page, limit } = action.payload;
+      state.todosState = items;
+      state.todoIdsState = items.map((todo) => todo.id);
+      Object.assign(state, { total, page, limit, loading: false });
+    },
+    pageFailed(state, action: PayloadAction<{ requestId: string; error: string }>) {
+      if (state.requestId !== action.payload.requestId) return;
+      state.loading = false;
+      state.error = action.payload.error;
+    },
     setTodos(state, action: PayloadAction<SetTodosPayload>) {
       const { type, todos } = action.payload;
 
@@ -75,5 +121,6 @@ const todoSlice = createSlice({
   },
 });
 
-export const { setTodos, setTodoIds, updateTodoTitle } = todoSlice.actions;
+export const { pageRequested, pageReceived, pageFailed, setTodos, setTodoIds, updateTodoTitle } =
+  todoSlice.actions;
 export default todoSlice.reducer;

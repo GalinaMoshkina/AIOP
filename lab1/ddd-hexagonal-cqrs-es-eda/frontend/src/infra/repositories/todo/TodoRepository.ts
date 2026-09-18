@@ -8,11 +8,12 @@ import {
 } from '../../../api/sdk.gen';
 import { type User } from '../../../models/User';
 import { EventBus, Events } from '../../../Events';
-import { type GetAllTodoResponse, type ITodoRepository } from '../../interfaces/ITodoRepository';
 import {
-  mapExternalTodo,
-  mapExternalTodoLifecycleEvent,
-} from '../../mappers/TodoMapper';
+  type TodoStatus,
+  type GetAllTodoResponse,
+  type ITodoRepository,
+} from '../../interfaces/ITodoRepository';
+import { mapExternalTodoPage, mapExternalTodoLifecycleEvent } from '../../mappers/TodoMapper';
 
 import { client } from '../../../api/client.gen';
 import { TODO_URL } from '../../../config';
@@ -87,7 +88,10 @@ class TodoRepository implements ITodoRepository {
   }
 
   async modifyTodoTitle(id: string, title: string): Promise<void> {
-    const response = await todoControllerModifyTitle({ path: { id }, body: { id, title } });
+    const response = await todoControllerModifyTitle({
+      path: { id },
+      body: { id, title },
+    });
     if (response.error) {
       throw new Error((response as { error: string }).error);
     }
@@ -114,18 +118,20 @@ class TodoRepository implements ITodoRepository {
     }
   }
 
-  async getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse> {
+  async getAllTodo(page = 1, limit = 20, status: TodoStatus = 'all'): Promise<GetAllTodoResponse> {
     try {
-      const response = await todoControllerGetAll({ query: { limit, offset } });
+      const response = await todoControllerGetAll({
+        query: { page, limit, status },
+      });
+      if (response.error || !response.data) throw new Error('Failed to fetch todos');
       return {
         status: 'success',
-        todos: response.data?.todos?.map(mapExternalTodo) ?? [],
+        ...mapExternalTodoPage(response.data),
         error: undefined,
       };
     } catch (error) {
       return {
         status: 'error',
-        todos: undefined,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }

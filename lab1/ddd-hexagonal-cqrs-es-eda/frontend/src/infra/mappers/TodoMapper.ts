@@ -64,14 +64,50 @@ export function mapExternalTodoLifecycleEvent(value: unknown): TodoLifecycleEven
     case 'todo.added':
       return { eventName: 'onAdded', payload: mapExternalTodo(envelope.data) };
     case 'todo.deleted':
-      return { eventName: 'onDeleted', payload: mapTodoIdentifier(envelope.data) };
+      return {
+        eventName: 'onDeleted',
+        payload: mapTodoIdentifier(envelope.data),
+      };
     case 'todo.modified_title':
-      return { eventName: 'onModifiedTitle', payload: mapTodoTitleUpdate(envelope.data) };
+      return {
+        eventName: 'onModifiedTitle',
+        payload: mapTodoTitleUpdate(envelope.data),
+      };
     case 'todo.completed':
-      return { eventName: 'onCompleted', payload: mapTodoIdentifier(envelope.data) };
+      return {
+        eventName: 'onCompleted',
+        payload: mapTodoIdentifier(envelope.data),
+      };
     case 'todo.uncompleted':
-      return { eventName: 'onUncompleted', payload: mapTodoIdentifier(envelope.data) };
+      return {
+        eventName: 'onUncompleted',
+        payload: mapTodoIdentifier(envelope.data),
+      };
     default:
       return null;
   }
+}
+
+export function mapExternalTodoPage(
+  value: unknown
+): import('../interfaces/ITodoRepository').TodoPage {
+  const page = asRecord(value, 'todo page');
+  if (
+    !Array.isArray(page.items) ||
+    !Number.isSafeInteger(page.total) ||
+    Number(page.total) < 0 ||
+    !Number.isSafeInteger(page.page) ||
+    Number(page.page) < 1 ||
+    !Number.isSafeInteger(page.limit) ||
+    Number(page.limit) < 1 ||
+    Number(page.limit) > 100
+  ) {
+    throw new Error('Invalid todo page');
+  }
+  return {
+    items: page.items.map(mapExternalTodo),
+    total: Number(page.total),
+    page: Number(page.page),
+    limit: Number(page.limit),
+  };
 }

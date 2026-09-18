@@ -2,72 +2,53 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 
 import { EventBus, Events } from '../../Events';
 import TodoRepository from '../../infra/repositories/todo';
-import todoReducer, { setTodoIds, setTodos, updateTodoTitle } from './todoReducer';
+import type { RootState } from '../store';
+import type { TodoStatus } from '../../infra/interfaces/ITodoRepository';
+import todoReducer, {
+  pageRequested,
+  pageReceived,
+  pageFailed,
+  setTodoIds,
+  setTodos,
+  updateTodoTitle,
+} from './todoReducer';
 
 const todoRepository = new TodoRepository();
 let isSubscribedToTodoEvents = false;
 
-export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
+export const loadTodoPage = createAsyncThunk<
+  void,
+  { page?: number; status?: TodoStatus },
+  { state: RootState; rejectValue: string }
+>('todo/loadTodoPage', async (options, { dispatch, getState, requestId, rejectWithValue }) => {
+  const current = getState().todo;
+  const page = options.page ?? current.page;
+  const status = options.status ?? current.status;
+  dispatch(pageRequested({ page, status, requestId }));
+  const response = await todoRepository.getAllTodo(page, current.limit, status);
+  if (response.status === 'error') {
+    dispatch(pageFailed({ requestId, error: response.error }));
+    return rejectWithValue(response.error);
+  }
+  // A deletion can remove the last item on the last page.
+  const lastPage = Math.max(1, Math.ceil(response.total / response.limit));
+  if (page > lastPage && getState().todo.requestId === requestId) {
+    await dispatch(loadTodoPage({ page: lastPage, status }));
+    return;
+  }
+  dispatch(pageReceived({ ...response, requestId }));
+});
+
+export const initTodos = createAsyncThunk<void, void, { state: RootState }>(
   'todo/initTodos',
-  async (_, { dispatch, rejectWithValue }) => {
+  async (_, { dispatch }) => {
     if (!isSubscribedToTodoEvents) {
-      EventBus.subscribe(
-        Events.TODO_EVENT,
-        (todoEvent) => {
-          switch (todoEvent.eventName) {
-            case 'onAdded':
-              dispatch(setTodos({ type: 'onAdded', todos: [todoEvent.payload] }));
-              break;
-            case 'onDeleted':
-              dispatch(setTodos({ type: 'onDeleted', todos: [todoEvent.payload] }));
-              break;
-            case 'onModifiedTitle':
-              dispatch(setTodos({ type: 'onModifiedTitle', todos: [todoEvent.payload] }));
-              break;
-            case 'onCompleted':
-              dispatch(setTodos({ type: 'onCompleted', todos: [todoEvent.payload] }));
-              break;
-            case 'onUncompleted':
-              dispatch(setTodos({ type: 'onUncompleted', todos: [todoEvent.payload] }));
-              break;
-            default:
-              break;
-          }
-        }
-      );
+      EventBus.subscribe(Events.TODO_EVENT, () => {
+        void dispatch(loadTodoPage({}));
+      });
       isSubscribedToTodoEvents = true;
     }
-
-    try {
-      const response = await todoRepository.getAllTodo(5, 0);
-      if (response.status === 'success' && response.todos) {
-        dispatch(setTodos({ type: 'init', todos: response.todos }));
-        return;
-      }
-      return rejectWithValue(response.error ?? 'Unknown error');
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-);
-
-export const loadMoreTodos = createAsyncThunk<
-  void,
-  { offset: number; limit: number },
-  { rejectValue: string }
->(
-  'todo/loadMoreTodos',
-  async ({ offset, limit }, { dispatch, rejectWithValue }) => {
-    try {
-      const response = await todoRepository.getAllTodo(limit, offset);
-      if (response.status === 'success' && response.todos) {
-        dispatch(setTodos({ type: 'onAdded', todos: response.todos }));
-        return;
-      }
-      return rejectWithValue(response.error ?? 'Unknown error');
-    } catch (error) {
-      return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
-    }
+    await dispatch(loadTodoPage({ page: 1, status: 'all' }));
   }
 );
 
@@ -90,12 +71,9 @@ export const completeTodo = createAsyncThunk<void, string>('todo/completeTodo', 
   await todoRepository.completeTodo(id);
 });
 
-export const uncompleteTodo = createAsyncThunk<void, string>(
-  'todo/uncompleteTodo',
-  async (id) => {
-    await todoRepository.uncompleteTodo(id);
-  }
-);
+export const uncompleteTodo = createAsyncThunk<void, string>('todo/uncompleteTodo', async (id) => {
+  await todoRepository.uncompleteTodo(id);
+});
 
 export { setTodoIds, setTodos, updateTodoTitle };
 export default todoReducer;

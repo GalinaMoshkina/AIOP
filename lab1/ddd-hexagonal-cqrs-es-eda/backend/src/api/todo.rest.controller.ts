@@ -20,13 +20,17 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { AddTodoRequestDto } from './dto/add-todo.dto';
 import { ModifyTodoTitleRequestDto } from './dto/modify-todo-title.dto';
 import { BUSES_TOKENS } from '../lib/infra/nest-jetstream';
 import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guard';
 import { Infra } from 'ddd-tactical-core-boilerplate';
-import { GetAllTodosResponseDto } from './dto/get-all-todos.dto';
+import {
+  GetAllTodosResponseDto,
+  parseTodoListQuery,
+} from './dto/get-all-todos.dto';
 import { CompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/complete-todo.command';
 import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
@@ -68,15 +72,43 @@ export class TodoController {
 
   @Get()
   @ApiOperation({ summary: 'Get all todos' })
-  @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
+  @ApiResponse({
+    status: 200,
+    type: GetAllTodosResponseDto,
+    description: 'Returns all todos',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    minimum: 1,
+    default: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    minimum: 1,
+    maximum: 100,
+    default: 20,
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['all', 'completed', 'active'],
+  })
+  @ApiResponse({ status: 400, description: 'Invalid query parameters' })
+  async getAll(@Query() query: Record<string, unknown>) {
+    const { page, limit, status } = parseTodoListQuery(query);
     const results = await this.queryBus.request(
-      new GetTodosQuery(limit, offset),
+      new GetTodosQuery(page, limit, status),
     );
     if (results.isOk) {
       const data = results.data;
-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
-      return new GetAllTodosResponseDto(todos);
+      const todos: TodoReadModel[] = data.items.map((todo) =>
+        TodoReadModel.fromPrimitives(todo),
+      );
+      return new GetAllTodosResponseDto(todos, data.total, page, limit);
     } else {
       throw new HttpException(
         results.error?.message || 'Failed to fetch todos',
@@ -134,7 +166,10 @@ export class TodoController {
   @ApiResponse({ status: 204, description: 'Todo title updated' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
   @ApiResponse({ status: 404, description: 'Todo not found' })
-  async modifyTitle(@Param('id') id: string, @Body() dto: ModifyTodoTitleRequestDto) {
+  async modifyTitle(
+    @Param('id') id: string,
+    @Body() dto: ModifyTodoTitleRequestDto,
+  ) {
     const command = new ModifyTodoTitleCommand({
       id,
       title: dto.title,

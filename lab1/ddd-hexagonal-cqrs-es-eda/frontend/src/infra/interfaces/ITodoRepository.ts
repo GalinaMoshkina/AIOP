@@ -1,30 +1,16 @@
 import { type Todo } from '../../models/Todo';
-
-type GetAllTodoSuccessResponse = {
-  status: 'success';
-  todos: Todo[];
-  error: undefined;
+export type TodoStatus = 'all' | 'completed' | 'active';
+export type TodoPage = {
+  items: Todo[];
+  total: number;
+  page: number;
+  limit: number;
 };
-
-type GetAllTodoCachedResponse = {
-  status: 'cached';
-  todos: Todo[];
-  error: undefined;
-};
-
-type GetAllTodoErrorResponse = {
-  status: 'error';
-  error: string;
-  todos: undefined;
-};
-
 export type GetAllTodoResponse =
-  | GetAllTodoSuccessResponse
-  | GetAllTodoCachedResponse
-  | GetAllTodoErrorResponse;
-
+  ({ status: 'success'; error: undefined } & TodoPage) | { status: 'error'; error: string };
 export interface ITodoRepository {
-  getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse>; modifyTodoTitle(id: string, title: string): Promise<void>;
+  getAllTodo(page?: number, limit?: number, status?: TodoStatus): Promise<GetAllTodoResponse>;
+  modifyTodoTitle(id: string, title: string): Promise<void>;
   completeTodo(id: string): Promise<void>;
   uncompleteTodo(id: string): Promise<void>;
   deleteTodo(id: string): Promise<void>;

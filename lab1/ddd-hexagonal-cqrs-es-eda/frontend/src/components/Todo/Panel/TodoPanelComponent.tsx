@@ -1,3 +1,4 @@
+import type { TodoStatus } from '../../../infra/interfaces/ITodoRepository';
 import { type JSX } from 'react';
 import { Button, HStack, Input, VStack } from '@chakra-ui/react';
 import { Tooltip } from '../../ui/Tooltip';
@@ -11,7 +12,14 @@ interface TodoProps {
   newTodoTitle: string;
   setNewTodoTitle: React.Dispatch<React.SetStateAction<string>>;
   addItem: () => void;
-  onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+  page: number;
+  totalPages: number;
+  total: number;
+  status: TodoStatus;
+  loading: boolean;
+  error: string | null;
+  onPageChange: (page: number) => void;
+  onStatusChange: (status: TodoStatus) => void;
 }
 
 const vStackProps = {
@@ -25,7 +33,7 @@ const vStackProps = {
 };
 
 function TodoPanel(props: TodoProps): JSX.Element {
-  const { data, newTodoTitle, setNewTodoTitle, addItem, onScroll } = props;
+  const { data, newTodoTitle, setNewTodoTitle, addItem } = props;
 
   return (
     <div className="container">
@@ -49,7 +57,6 @@ function TodoPanel(props: TodoProps): JSX.Element {
               onChange={(e) => {
                 setNewTodoTitle((e.target as HTMLInputElement).value);
               }}
-              onKeyDown={(e) => e.key === 'Enter' && addItem()}
             />
             <Tooltip content="Add Todo">
               <Button type="submit" colorScheme="green" px="8">
@@ -58,15 +65,44 @@ function TodoPanel(props: TodoProps): JSX.Element {
             </Tooltip>
           </HStack>
         </form>
+        <label>
+          Status
+          <select
+            aria-label="Todo status"
+            value={props.status}
+            onChange={(event) => props.onStatusChange(event.target.value as TodoStatus)}
+          >
+            <option value="all">All</option>
+            <option value="completed">Completed</option>
+            <option value="active">Active</option>
+          </select>
+        </label>
+        {props.error && <p role="alert">{props.error}</p>}
+        {props.loading && <p role="status">Loading…</p>}
         <div
           className="todo-list"
           style={{ height: 300, overflowY: 'auto' }}
-          onScroll={onScroll}
+          aria-busy={props.loading}
         >
-          <ul>
-            {data && data.map((id) => <TodoElement key={id} id={id} />)}
-          </ul>
+          <ul>{data && data.map((id) => <TodoElement key={id} id={id} />)}</ul>
         </div>
+        <HStack>
+          <Button
+            disabled={props.loading || props.page <= 1}
+            onClick={() => props.onPageChange(props.page - 1)}
+          >
+            Previous
+          </Button>
+          <span>
+            Page {props.page} of {props.totalPages} · {props.total} todos
+          </span>
+          <Button
+            disabled={props.loading || props.page >= props.totalPages}
+            onClick={() => props.onPageChange(props.page + 1)}
+          >
+            Next
+          </Button>
+        </HStack>
       </VStack>
     </div>
   );

@@ -33,8 +33,17 @@ describe('Get todos feature test', () => {
       .withUserId(userId)
       .build();
 
-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
-    expect(result.value).toEqual([todoReadModel]);
+    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+      status: 'all',
+    });
+    expect(result.value).toEqual({
+      items: [todoReadModel.props],
+      total: 1,
+      page: 1,
+      limit: 20,
+    });
   });
 
   it('Get all todos successfully, empty array', async () => {
@@ -52,8 +61,12 @@ describe('Get todos feature test', () => {
     const result = await getTodosHandler.execute(getTodosQuery);
 
     //then
-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
-    expect(result.value).toEqual([]);
+    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+      status: 'all',
+    });
+    expect(result.value).toEqual({ items: [], total: 0, page: 1, limit: 20 });
   });
 
   it('Failed to get all todos, repo error', async () => {
@@ -71,7 +84,11 @@ describe('Get todos feature test', () => {
     const result = await getTodosHandler.execute(getTodosQuery);
 
     //then
-    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
+    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+      status: 'all',
+    });
     expect(result.value).toBeInstanceOf(Application.Repo.Errors.Unexpected);
   });
 });

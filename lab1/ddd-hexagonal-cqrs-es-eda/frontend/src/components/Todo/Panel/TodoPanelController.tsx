@@ -1,32 +1,20 @@
-import { useState, type JSX, type UIEvent } from 'react';
+import { useState, type JSX } from 'react';
 
 import TodoPanelComponent from './TodoPanelComponent';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '../../../store/store';
-import { addTodo, loadMoreTodos } from '../../../store/todo/todoSlice';
+import { addTodo, loadTodoPage } from '../../../store/todo/todoSlice';
 
 function TodoPanelController(): JSX.Element {
   const [newTodoTitle, setNewTodoTitle] = useState<string>('');
-  const { todoIdsState } = useSelector((state: RootState) => state.todo)
+  const { todoIdsState, page, limit, total, status, loading, error } = useSelector(
+    (state: RootState) => state.todo
+  );
   const dispatch = useDispatch<AppDispatch>();
 
-
-  const loadTodos = async () => {
-    dispatch(loadMoreTodos({ offset: todoIdsState.length, limit: 5 }));
-  };
-
   const addItem = () => {
-    if (newTodoTitle) dispatch(addTodo(newTodoTitle))
+    if (newTodoTitle) dispatch(addTodo(newTodoTitle));
     setNewTodoTitle('');
-  };
-
-  const handleScroll = (e: UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop - clientHeight < 50) {
-      loadTodos();
-    }
-    console.log(scrollHeight - scrollTop - clientHeight < 50);
-
   };
 
   return (
@@ -35,7 +23,14 @@ function TodoPanelController(): JSX.Element {
       newTodoTitle={newTodoTitle}
       setNewTodoTitle={setNewTodoTitle}
       addItem={addItem}
-      onScroll={handleScroll}
+      page={page}
+      totalPages={Math.max(1, Math.ceil(total / limit))}
+      total={total}
+      status={status}
+      loading={loading}
+      error={error}
+      onPageChange={(page) => void dispatch(loadTodoPage({ page }))}
+      onStatusChange={(status) => void dispatch(loadTodoPage({ page: 1, status }))}
     />
   );
 }

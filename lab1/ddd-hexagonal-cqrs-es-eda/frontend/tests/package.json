@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "pnpm run typecheck && pnpm run test:unit && pnpm run test:behaviour",
-    "test:unit": "tsx --test unit/todoMapper.test.ts",
+    "test:unit": "tsx --test unit/*.test.ts",
     "test:behaviour": "tsx ./node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.json",
     "typecheck": "tsc --noEmit --project tsconfig.json"
   },

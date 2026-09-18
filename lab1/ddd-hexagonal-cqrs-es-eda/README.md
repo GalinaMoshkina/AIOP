@@ -1127,3 +1127,24 @@ You can also contribute with a star to spread the word!
 - [A Philosophy of Software Design](https://www.goodreads.com/book/show/39996759-a-philosophy-of-software-design) - John Ousterhout
 - [Clean Code: A Handbook of Agile Software Craftsmanship](https://www.goodreads.com/book/show/3735293-clean-code) – Robert C. Martin (Uncle Bob)
 - [Patterns, Principles, and Practices of Domain-Driven Design](https://www.amazon.com/Patterns-Principles-Practices-Domain-Driven-Design/dp/1118714709) – Scott Millett, Nick Tune
+
+
+### Todo list pagination
+
+`GET /todos?page=1&limit=20&status=all` requires the existing bearer authentication.
+
+- `page`: positive integer, default `1`.
+- `limit`: integer from `1` to `100`, default `20`.
+- `status`: `all`, `completed`, or `active`, default `all`.
+- Invalid values (including empty or repeated parameters) return HTTP 400.
+
+The response is `{ "items": [...], "total": 42, "page": 1, "limit": 20 }`.
+`total` counts only the authenticated user's tasks matching the status, before
+pagination. A page beyond the last page returns empty `items` and retains `total`.
+Tasks are ordered by creation time descending, then ID ascending for ties.
+The former `offset` pagination and `todos` response field are replaced by `page`
+and `items`. The frontend includes status selection and Previous/Next controls;
+SSE events refresh the current page and its total.
+
+The PostgreSQL list tests are included in `pnpm --dir backend run test:integration`.
+Use a dedicated test database through the existing `PG_*` environment variables.

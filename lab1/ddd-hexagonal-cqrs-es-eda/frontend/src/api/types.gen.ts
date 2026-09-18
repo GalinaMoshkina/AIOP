@@ -34,7 +34,10 @@ export type GetAllTodosResponseDto = {
     /**
      * Array of todo items
      */
-    todos: Array<TodoDto>;
+    items: Array<TodoDto>;
+    total: number;
+    page: number;
+    limit: number;
 };
 
 export type ModifyTodoTitleRequestDto = {
@@ -67,9 +70,10 @@ export type AuthControllerMeResponses = {
 export type TodoControllerGetAllData = {
     body?: never;
     path?: never;
-    query: {
-        limit: number;
-        offset: number;
+    query?: {
+        limit?: number;
+        page?: number;
+        status?: 'all' | 'completed' | 'active';
     };
     url: '/todos';
 };
