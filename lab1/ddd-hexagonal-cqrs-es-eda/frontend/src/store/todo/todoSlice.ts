@@ -2,7 +2,15 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 
 import { EventBus, Events } from '../../Events';
 import TodoRepository from '../../infra/repositories/todo';
-import todoReducer, { setTodoIds, setTodos, updateTodoTitle } from './todoReducer';
+import todoReducer, {
+  setLoading,
+  setPagination,
+  setTodoIds,
+  setTodos,
+  updateTodoTitle,
+} from './todoReducer';
+
+import type { RootState } from '../store';
 
 const todoRepository = new TodoRepository();
 let isSubscribedToTodoEvents = false;
@@ -39,9 +47,10 @@ export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
     }
 
     try {
-      const response = await todoRepository.getAllTodo(5, 0);
+      const response = await todoRepository.getAllTodo();
       if (response.status === 'success' && response.todos) {
         dispatch(setTodos({ type: 'init', todos: response.todos }));
+        dispatch(setPagination(response));
         return;
       }
       return rejectWithValue(response.error ?? 'Unknown error');
@@ -53,21 +62,32 @@ export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
 
 export const loadMoreTodos = createAsyncThunk<
   void,
-  { offset: number; limit: number },
-  { rejectValue: string }
+  void,
+  { rejectValue: string; state: RootState }
 >(
   'todo/loadMoreTodos',
-  async ({ offset, limit }, { dispatch, rejectWithValue }) => {
+  async (_, { dispatch, getState, rejectWithValue }) => {
+    const { page, limit } = getState().todo;
+    dispatch(setLoading(true));
     try {
-      const response = await todoRepository.getAllTodo(limit, offset);
-      if (response.status === 'success' && response.todos) {
+      const response = await todoRepository.getAllTodo(page + 1, limit);
+      if (response.status === 'success') {
         dispatch(setTodos({ type: 'onAdded', todos: response.todos }));
+        dispatch(setPagination(response));
         return;
       }
       return rejectWithValue(response.error ?? 'Unknown error');
     } catch (error) {
       return rejectWithValue(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      dispatch(setLoading(false));
     }
+  },
+  {
+    condition: (_, { getState }) => {
+      const { loading, page, limit, total } = getState().todo;
+      return !loading && page > 0 && page * limit < total;
+    },
   }
 );
 

@@ -8,11 +8,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Pool, QueryResultRow } from 'pg';
 
 import { constants } from '@lib/infra/postgres';
+import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import {
-  TodoReadModel,
-  TTodoReadModelSnapshot,
-} from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
-import { TodoReadRepoPort } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+  TodoPage,
+  TodoReadRepoPort,
+} from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
 
 type TodoProjectionRow = QueryResultRow & {
   id: string;
@@ -45,27 +45,38 @@ export class TodoReadRepository implements TodoReadRepoPort {
   }
 
   @Application.Repo.Decorators.ReturnUnexpectedError()
-  async getAll(params?: {
-    limit?: number;
-    offset?: number;
-  }): Promise<Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>> {
+  async getAll(
+    params: Parameters<TodoReadRepoPort['getAll']>[0],
+  ): Promise<Either<TodoPage, Application.Repo.Errors.Unexpected>> {
     const userId = this.authenticatedUserId();
-    const limit = this.normaliseInteger(params?.limit, 50, 1, 100);
-    const offset = this.normaliseInteger(params?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const result = await this.pool.query<TodoProjectionRow>(
-      `SELECT
-         id::text,
-         user_id::text AS "userId",
-         title,
-         completed
-       FROM todo_projection
-       WHERE user_id = $1
-       ORDER BY updated_at DESC, id
-       LIMIT $2 OFFSET $3`,
-      [userId, limit, offset],
+    const { page, limit, status } = params;
+    const completed = status === 'all' ? null : status === 'completed';
+    const offset = (BigInt(page) - 1n) * BigInt(limit);
+    const result = await this.pool.query<{ items: TodoPage['items']; total: number }>(
+      `WITH filtered AS (
+         SELECT id, user_id, title, completed, created_at
+         FROM todo_projection
+         WHERE user_id = $1 AND ($2::boolean IS NULL OR completed = $2)
+       ), paged AS (
+         SELECT * FROM filtered ORDER BY created_at, id LIMIT $3 OFFSET $4
+       )
+       SELECT
+         COALESCE((
+           SELECT jsonb_agg(
+             jsonb_build_object(
+               'id', id::text,
+               'userId', user_id::text,
+               'title', title,
+               'completed', completed
+             )
+             ORDER BY created_at, id
+           )
+           FROM paged
+         ), '[]'::jsonb) AS items,
+         (SELECT COUNT(*)::int FROM filtered) AS total`,
+      [userId, completed, limit, offset.toString()],
     );
-
-    return ok(result.rows);
+    return ok({ ...result.rows[0], page, limit });
   }
 
   private authenticatedUserId(): string {
@@ -76,16 +87,5 @@ export class TodoReadRepository implements TodoReadRepoPort {
       throw new Error('Missing authenticated request context');
     }
     return context.userId;
-  }
-
-  private normaliseInteger(
-    value: number | undefined,
-    fallback: number,
-    minimum: number,
-    maximum: number,
-  ): number {
-    const parsed = Number(value);
-    if (!Number.isInteger(parsed)) return fallback;
-    return Math.min(maximum, Math.max(minimum, parsed));
   }
 }

@@ -13,6 +13,7 @@ import {
   Param,
   UseGuards,
   Query,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -26,7 +27,10 @@ import { ModifyTodoTitleRequestDto } from './dto/modify-todo-title.dto';
 import { BUSES_TOKENS } from '../lib/infra/nest-jetstream';
 import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guard';
 import { Infra } from 'ddd-tactical-core-boilerplate';
-import { GetAllTodosResponseDto } from './dto/get-all-todos.dto';
+import {
+  GetAllTodosRequestDto,
+  GetAllTodosResponseDto,
+} from './dto/get-all-todos.dto';
 import { CompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/complete-todo.command';
 import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
@@ -69,14 +73,24 @@ export class TodoController {
   @Get()
   @ApiOperation({ summary: 'Get all todos' })
   @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
+  @ApiResponse({ status: 400, description: 'Invalid query parameters' })
+  async getAll(
+    @Query(
+      new ValidationPipe({
+        forbidNonWhitelisted: true,
+        transform: true,
+        whitelist: true,
+      }),
+    )
+    dto: GetAllTodosRequestDto,
+  ): Promise<GetAllTodosResponseDto> {
     const results = await this.queryBus.request(
-      new GetTodosQuery(limit, offset),
+      new GetTodosQuery(dto.page, dto.limit, dto.status),
     );
     if (results.isOk) {
       const data = results.data;
-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
-      return new GetAllTodosResponseDto(todos);
+      const todos: TodoReadModel[] = data.items.map((todo) => TodoReadModel.fromPrimitives(todo));
+      return new GetAllTodosResponseDto(todos, data.total, data.page, data.limit);
     } else {
       throw new HttpException(
         results.error?.message || 'Failed to fetch todos',

@@ -4,6 +4,10 @@ import todoReducer, { setTodos } from '../../../src/store/todo/todoReducer';
 import type { Todo } from '../../../src/models/Todo';
 
 interface TodoState {
+    page: number;
+    total: number;
+    limit: number;
+    loading: boolean;
     todosState: Todo[];
     todoIdsState: string[];
 }
@@ -21,12 +25,23 @@ function parseTodosTable(table: DataTable): Todo[] {
 }
 
 Given('a fresh todo state', function (this: TodoWorld) {
-    this.state = { todosState: [], todoIdsState: [] };
+    this.state = {
+        page: 0,
+        total: 0,
+        limit: 20,
+        loading: false,
+        todosState: [],
+        todoIdsState: [],
+    };
 });
 
 Given('a todo state with:', function (this: TodoWorld, table: DataTable) {
     const todos = parseTodosTable(table);
     this.state = {
+        page: 0,
+        total: 0,
+        limit: 20,
+        loading: false,
         todosState: todos,
         todoIdsState: todos.map(todo => todo.id),
     };

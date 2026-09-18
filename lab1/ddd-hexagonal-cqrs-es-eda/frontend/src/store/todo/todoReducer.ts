@@ -4,11 +4,19 @@ import type { TodoIdentifier, TodoTitleUpdate } from '../../infra/mappers/TodoMa
 import type { Todo } from '../../models/Todo';
 
 interface TodoState {
+  page: number;
+  total: number;
+  limit: number;
+  loading: boolean;
   todosState: Todo[];
   todoIdsState: string[];
 }
 
 const initialState: TodoState = {
+  page: 0,
+  total: 0,
+  limit: 20,
+  loading: false,
   todosState: [],
   todoIdsState: [],
 };
@@ -26,6 +34,12 @@ const todoSlice = createSlice({
   name: 'todo',
   initialState,
   reducers: {
+    setPagination(state, action: PayloadAction<{ page: number; total: number; limit: number }>) {
+      Object.assign(state, action.payload);
+    },
+    setLoading(state, action: PayloadAction<boolean>) {
+      state.loading = action.payload;
+    },
     setTodos(state, action: PayloadAction<SetTodosPayload>) {
       const { type, todos } = action.payload;
 
@@ -35,7 +49,11 @@ const todoSlice = createSlice({
           state.todoIdsState = todos.map((todo) => todo.id);
           break;
         case 'onAdded':
-          state.todosState = Array.from(new Set([...state.todosState, ...todos]));
+          state.todosState = Array.from(
+            new Map(
+              [...state.todosState, ...todos].map((todo) => [todo.id, todo]),
+            ).values(),
+          );
           state.todoIdsState = Array.from(
             new Set([...state.todoIdsState, ...todos.map((todo) => todo.id)])
           );
@@ -75,5 +93,11 @@ const todoSlice = createSlice({
   },
 });
 
-export const { setTodos, setTodoIds, updateTodoTitle } = todoSlice.actions;
+export const {
+  setPagination,
+  setLoading,
+  setTodos,
+  setTodoIds,
+  updateTodoTitle,
+} = todoSlice.actions;
 export default todoSlice.reducer;

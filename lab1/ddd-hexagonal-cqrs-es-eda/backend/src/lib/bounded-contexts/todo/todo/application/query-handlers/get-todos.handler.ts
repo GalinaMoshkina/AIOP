@@ -1,23 +1,23 @@
 import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
 import { Inject } from '@nestjs/common';
 // import { QueryHandler } from '@nestjs/cqrs';
-import { TTodoReadModelSnapshot } from '../../domain/todo.read-model';
-import { TodoReadRepoPort } from '../../ports/todo-read.repo-port';
+import { TodoReadRepoPort, TodoPage } from '../../ports/todo-read.repo-port';
 import { GetTodosQuery } from '../../queries/get-todos.query';
 import { Traceable } from '@lib/infra/telemetry';
 import { TodoReadRepoPortToken } from '../../constants';
 
 export type GetTodosQueryHandlerResponse = Either<
-  TTodoReadModelSnapshot[],
+  TodoPage,
   Application.Repo.Errors.Unexpected
 >;
 
 export class GetTodosHandler
-  implements Application.IQueryHandler<GetTodosQuery, TTodoReadModelSnapshot[]> {
+  implements Application.IQueryHandler<GetTodosQuery, TodoPage>
+{
   constructor(
     @Inject(TodoReadRepoPortToken)
     private readonly todoRepo: TodoReadRepoPort,
-  ) { }
+  ) {}
 
   get query() {
     return GetTodosQuery;
@@ -36,36 +36,9 @@ export class GetTodosHandler
     },
   })
   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
-    const { limit, offset } = query;
-    const results = await this.todoRepo.getAll({ limit, offset });
+    const { page, limit, status } = query;
+    const results = await this.todoRepo.getAll({ page, limit, status });
     if (results.isFail()) return fail(results.value);
-    if (results.value) return ok(results.value);
-    return ok([]);
+    return ok(results.value);
   }
 }
-
-// @QueryHandler(GetTodosQuery)
-// export class GetTodosHandler
-//   implements
-//     Application.IQueryHandler<
-//       GetTodosQuery,
-//       Promise<GetTodosQueryHandlerResponse>
-//     >
-// {
-//   get query() {
-//     return GetTodosQuery;
-//   }
-
-//   get boundedContext() {
-//     return 'Todo';
-//   }
-//   constructor(
-//     @Inject(TodoReadRepoPortToken) private todoRepo: TodoReadRepoPort,
-//   ) {}
-
-//   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
-//     const todos = await this.todoRepo.getAll(query.ctx);
-//     if (todos) return ok(todos);
-//     return ok([]);
-//   }
-// }
