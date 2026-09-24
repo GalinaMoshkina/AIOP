@@ -3,6 +3,7 @@ export type TTodoReadModelSnapshot = {
   id: string;
   title: string;
   completed: boolean;
+  deletedAt?: string | null;
 };
 
 export class TodoReadModel {

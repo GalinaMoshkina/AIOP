@@ -4,6 +4,8 @@ import { TodoAddedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain
 import { TodoCompletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-completed.event';
 import { TodoDeletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-deleted.event';
 import { TodoModifiedTitleDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-modified-title.event';
+import { TodoRestoredDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-restored.event';
+import { TodoSoftDeletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-soft-deleted.event';
 import { TodoUncompletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-uncompleted.event';
 import {
   TodoEventPayload,
@@ -33,7 +35,9 @@ type TodoDomainEvent =
   | TodoCompletedDomainEvent
   | TodoDeletedDomainEvent
   | TodoModifiedTitleDomainEvent
-  | TodoUncompletedDomainEvent;
+  | TodoUncompletedDomainEvent
+  | TodoSoftDeletedDomainEvent
+  | TodoRestoredDomainEvent;
 
 type TodoDomainEventConstructor = new (payload: TodoEventPayload) => TodoDomainEvent;
 
@@ -43,6 +47,8 @@ const eventConstructors: Record<PersistableTodoEventType, TodoDomainEventConstru
   TodoDeletedDomainEvent,
   TodoModifiedTitleDomainEvent,
   TodoUncompletedDomainEvent,
+  TodoSoftDeletedDomainEvent,
+  TodoRestoredDomainEvent,
 };
 
 export function serialiseTodoEvent(

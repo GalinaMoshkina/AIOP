@@ -52,11 +52,14 @@ export class DeleteTodoHandler
       return fail(new ApplicationErrors.TodoNotFoundError(command.id));
     }
 
-    todo.value.delete();
-
-    const deleteResult = await this.todoRepo.delete(todo.value);
+    const deleteResult = todo.value.markAsDeleted();
     if (deleteResult.isFail()) {
-      return fail(deleteResult.value);
+      return fail(new ApplicationErrors.TodoNotFoundError(command.id));
+    }
+
+    const persistResult = await this.todoRepo.delete(todo.value);
+    if (persistResult.isFail()) {
+      return fail(persistResult.value);
     }
     return ok();
   }

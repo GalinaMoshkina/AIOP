@@ -32,6 +32,8 @@ import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.r
 import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
 import { GetTodosQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
 import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
+import { RestoreTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/restore-todo.command';
+import { GetTodoQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-todo.query';
 import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
 import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
 
@@ -150,6 +152,32 @@ export class TodoController {
           : HttpStatus.BAD_REQUEST,
       );
     }
+  }
+
+
+  @Post(':id/restore')
+  @ApiOperation({ summary: 'Restore a soft-deleted todo' })
+  @ApiParam({ name: 'id', description: 'Todo ID' })
+  @ApiResponse({ status: 200, description: 'Todo restored successfully' })
+  @ApiResponse({ status: 404, description: 'Todo not found or not deleted' })
+  async restoreTodo(@Param('id') id: string) {
+    const result = await this.commandBus.request(new RestoreTodoCommand({ id }));
+
+    if (!result.isOk) {
+      throw new HttpException(
+        result.error?.message || 'Failed to restore todo',
+        result.error?.code === 'TODO_NOT_FOUND'
+          ? HttpStatus.NOT_FOUND
+          : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const todo = await this.queryBus.request(new GetTodoQuery(id));
+    if (!todo.isOk || !todo.data) {
+      throw new HttpException('Todo not found', HttpStatus.NOT_FOUND);
+    }
+
+    return TodoReadModel.fromPrimitives(todo.data);
   }
 
   @Delete(':id')

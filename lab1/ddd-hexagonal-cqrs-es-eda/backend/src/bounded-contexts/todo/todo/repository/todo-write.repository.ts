@@ -63,7 +63,14 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
       throw new Error('Todo does not belong to the authenticated user');
     }
 
-    return ok(todo.isDeleted ? null : todo);
+    return ok(todo);
+  }
+
+  @Application.Repo.Decorators.ReturnUnexpectedError()
+  async getByIdIncludingDeleted(
+    id: Domain.UUIDv4,
+  ): Promise<Either<TodoEntity | null, Application.Repo.Errors.Unexpected>> {
+    return this.getById(id);
   }
 
   @Application.Repo.Decorators.ReturnUnexpectedError()
@@ -192,26 +199,17 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
     if (operation === 'create') {
       await client.query(
         `INSERT INTO todo_projection (
-           id, user_id, title, completed, version
-         ) VALUES ($1, $2, $3, $4, $5)`,
+           id, user_id, title, completed, deleted_at, version
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           snapshot.id,
           snapshot.userId.id,
           snapshot.title.title,
           snapshot.completed,
+          snapshot.deletedAt,
           committedVersion,
         ],
       );
-      return;
-    }
-
-    if (operation === 'delete') {
-      const result = await client.query(
-        `DELETE FROM todo_projection
-         WHERE id = $1 AND user_id = $2 AND version = $3`,
-        [snapshot.id, snapshot.userId.id, expectedVersion],
-      );
-      this.assertProjectionChanged(result.rowCount, todo.id.toString());
       return;
     }
 
@@ -219,14 +217,16 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
       `UPDATE todo_projection
        SET title = $3,
            completed = $4,
-           version = $5,
+           deleted_at = $5,
+           version = $6,
            updated_at = NOW()
-       WHERE id = $1 AND user_id = $2 AND version = $6`,
+       WHERE id = $1 AND user_id = $2 AND version = $7`,
       [
         snapshot.id,
         snapshot.userId.id,
         snapshot.title.title,
         snapshot.completed,
+        snapshot.deletedAt,
         committedVersion,
         expectedVersion,
       ],

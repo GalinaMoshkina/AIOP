@@ -18,10 +18,13 @@ export const TODO_POSTGRES_SCHEMA = `
     user_id UUID NOT NULL,
     title VARCHAR(255) NOT NULL,
     completed BOOLEAN NOT NULL,
+    deleted_at TIMESTAMPTZ,
     version INTEGER NOT NULL CHECK (version > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+
+  ALTER TABLE todo_projection ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
   CREATE INDEX IF NOT EXISTS todo_projection_user_updated_idx
     ON todo_projection (user_id, updated_at DESC, id);

@@ -19,6 +19,7 @@ type TodoProjectionRow = QueryResultRow & {
   userId: string;
   title: string;
   completed: boolean;
+  deletedAt: string | null;
 };
 
 @Injectable()
@@ -35,9 +36,10 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         deleted_at::text AS "deletedAt"
        FROM todo_projection
-       WHERE id = $1 AND user_id = $2`,
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
       [id, userId],
     );
     const row = result.rows[0];
@@ -57,9 +59,10 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         deleted_at::text AS "deletedAt"
        FROM todo_projection
-       WHERE user_id = $1
+       WHERE user_id = $1 AND deleted_at IS NULL
        ORDER BY updated_at DESC, id
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
