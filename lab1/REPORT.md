@@ -62,7 +62,7 @@
 3. BDD / use-case tests: добавлены controller-level tests, которые проверяют HTTP endpoint и mock queryBus, но полноценного теста самого `GetTodosHandler` с mock `TodoReadRepoPort` для нового поведения нет. То есть тестируется API boundary, но не полностью use case через application layer.
    
 4. Избыточная логика в API: парсинг `page`, `limit` и `status` реализован непосредственно внутри DTO-файла (`parseTodoListQuery`). В результате DTO становится не только описанием внешнего контракта, но и содержит довольно много процедурной валидации. При этом в проекте уже есть отдельный механизм DTO/validation, поэтому решение получилось более ручным, чем необходимо.
-
+---
 Сделаем ещё один прогон на отдельной ветке репозитория — на `baseline-attempt-2`. Используем тот же промпт на изначальном состоянии проекта.  
 
 <img width="1037" height="593" alt="image" src="https://github.com/user-attachments/assets/e59ac46a-726a-4eb8-83d3-bc3708ce893b" />  
