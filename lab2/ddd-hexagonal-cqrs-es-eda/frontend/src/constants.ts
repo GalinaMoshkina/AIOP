@@ -1,0 +1,1 @@
+export const AUTH_MESSAGE_DURATION = 5000;

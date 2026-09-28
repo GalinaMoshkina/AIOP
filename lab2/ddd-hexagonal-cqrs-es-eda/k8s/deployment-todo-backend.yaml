@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-backend
+  namespace: bitloops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-backend
+  template:
+    metadata:
+      labels:
+        app: todo-backend
+    spec:
+      containers:
+        - name: todo-backend
+          image: todo-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HTTP_IP
+              value: 0.0.0.0
+            - name: NATS_HOST
+              value: bl-nats
+            - name: PG_HOST
+              value: bl-postgres
+            - name: PG_DATABASE
+              value: bitloops
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: bl-postgres-secret
+                  key: POSTGRES_USER
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bl-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: OIDC_ISSUER
+              value: http://localhost:8090/realms/bitloops
+            - name: OIDC_AUDIENCE
+              value: todo-api
+            - name: OIDC_CLIENT_ID
+              value: todo-frontend
+            - name: OIDC_JWKS_URI
+              value: http://bl-keycloak:8090/realms/bitloops/protocol/openid-connect/certs
+            - name: OIDC_REQUIRE_VERIFIED_EMAIL
+              value: "false"
+          ports:
+            - containerPort: 8080
