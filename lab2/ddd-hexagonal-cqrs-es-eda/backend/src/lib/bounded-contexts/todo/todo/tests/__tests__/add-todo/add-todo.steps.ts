@@ -32,9 +32,53 @@ describe('Add todo feature test', () => {
     expect(todoAggregate.toPrimitives()).toMatchObject({
       title: { title },
       completed,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(TodoAddedDomainEvent);
     expect(typeof result.value).toBe('string');
+  });
+
+  it('Todo created successfully with due date', async () => {
+    const { userId, title, completed } = ADD_TODO_SUCCESS_CASE;
+    mockAsyncLocalStorageGet(userId);
+    const dueDate = '2026-10-15';
+    const mockTodoWriteRepo = new MockAddTodoWriteRepo();
+    const addTodoCommand = new AddTodoCommand({ title, dueDate });
+
+    const addTodoHandler = new AddTodoCommandHandler(
+      mockTodoWriteRepo.getMockTodoWriteRepo(),
+    );
+    const result = await addTodoHandler.execute(addTodoCommand);
+
+    expect(mockTodoWriteRepo.mockSaveMethod).toHaveBeenCalledWith(
+      expect.any(TodoEntity),
+    );
+    const todoAggregate = mockTodoWriteRepo.mockSaveMethod.mock.calls[0][0];
+    expect(todoAggregate.toPrimitives()).toMatchObject({
+      title: { title },
+      completed,
+      dueDate,
+    });
+    expect(todoAggregate.domainEvents[0]).toBeInstanceOf(TodoAddedDomainEvent);
+    expect(typeof result.value).toBe('string');
+  });
+
+  it('Todo failed to be created, invalid due date', async () => {
+    const { userId, title } = ADD_TODO_SUCCESS_CASE;
+    mockAsyncLocalStorageGet(userId);
+    const mockTodoWriteRepo = new MockAddTodoWriteRepo();
+    const addTodoCommand = new AddTodoCommand({
+      title,
+      dueDate: '15.10.2026',
+    });
+
+    const addTodoHandler = new AddTodoCommandHandler(
+      mockTodoWriteRepo.getMockTodoWriteRepo(),
+    );
+    const result = await addTodoHandler.execute(addTodoCommand);
+
+    expect(mockTodoWriteRepo.mockSaveMethod).not.toHaveBeenCalled();
+    expect(result.value).toBeInstanceOf(DomainErrors.InvalidDueDateError);
   });
 
   it('Todo failed to be created, invalid title', async () => {

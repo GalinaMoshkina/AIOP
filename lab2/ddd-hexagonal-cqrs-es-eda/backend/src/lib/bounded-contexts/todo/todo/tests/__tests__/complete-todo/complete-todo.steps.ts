@@ -53,6 +53,7 @@ describe('Complete todo feature test', () => {
       userId,
       title: todoTitle,
       completed: true,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(
       TodoCompletedDomainEvent,
@@ -159,6 +160,7 @@ describe('Complete todo feature test', () => {
       userId,
       title: todoTitle,
       completed: true,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(
       TodoCompletedDomainEvent,

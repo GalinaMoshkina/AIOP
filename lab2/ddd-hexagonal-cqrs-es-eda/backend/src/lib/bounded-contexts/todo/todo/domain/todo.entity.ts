@@ -8,12 +8,16 @@ import { TodoCompletedDomainEvent } from './events/todo-completed.event';
 import { TodoUncompletedDomainEvent } from './events/todo-uncompleted.event';
 import { Rules } from './rules';
 import { TodoDeletedDomainEvent } from './events/todo-deleted.event';
+import { DueDateVO } from './due-date.value-object';
+import { TodoDueDateSetDomainEvent } from './events/todo-due-date-set.event';
+import { TodoDueDateRemovedDomainEvent } from './events/todo-due-date-removed.event';
 
 export interface TodoProps {
   userId: UserIdVO;
   id?: Domain.UUIDv4;
   title: TitleVO;
   completed: boolean;
+  dueDate?: DueDateVO;
 }
 
 export type TodoEventType =
@@ -21,13 +25,16 @@ export type TodoEventType =
   | 'TodoModifiedTitleDomainEvent'
   | 'TodoCompletedDomainEvent'
   | 'TodoUncompletedDomainEvent'
-  | 'TodoDeletedDomainEvent';
+  | 'TodoDeletedDomainEvent'
+  | 'TodoDueDateSetDomainEvent'
+  | 'TodoDueDateRemovedDomainEvent';
 
 export type TodoEventPayload = {
   aggregateId: string;
   userId: string;
   title: string;
   completed: boolean;
+  dueDate?: string | null;
 };
 
 export type TodoHistoryEvent = {
@@ -45,6 +52,7 @@ type TTodoEntityPrimitives = {
     title: string;
   };
   completed: boolean;
+  dueDate?: string | null;
 };
 
 export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
@@ -65,6 +73,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
         title: todo.title.title,
         userId: todo.userId.id.toString(),
         completed: todo.completed,
+        dueDate: todo.dueDate?.value ?? null,
         aggregateId: todo.id.toString(),
       });
       todo.addDomainEvent(todoAddedDomainEvent);
@@ -83,6 +92,10 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
 
   get userId(): UserIdVO {
     return this.props.userId;
+  }
+
+  get dueDate(): DueDateVO | undefined {
+    return this.props.dueDate;
   }
 
   get version(): number {
@@ -104,6 +117,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
       title: this.title.title,
       userId: this.userId.id.toString(),
       completed: this.completed,
+      dueDate: this.dueDate?.value ?? null,
       aggregateId: this.id.toString(),
     });
     this.addDomainEvent(todoCompletedDomainEvent);
@@ -123,6 +137,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
       title: this.title.title,
       userId: this.userId.id.toString(),
       completed: this.completed,
+      dueDate: this.dueDate?.value ?? null,
       aggregateId: this.id.toString(),
     });
     this.addDomainEvent(todoUncompletedDomainEvent);
@@ -136,6 +151,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
         title: this.title.title,
         userId: this.userId.id.toString(),
         completed: this.completed,
+        dueDate: this.dueDate?.value ?? null,
         aggregateId: this.id.toString(),
       }),
     );
@@ -149,9 +165,39 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
       title: this.title.title,
       userId: this.userId.id.toString(),
       completed: this.completed,
+      dueDate: this.dueDate?.value ?? null,
       aggregateId: this.id.toString(),
     });
     this.addDomainEvent(titleModifiedDomainEvent);
+    return ok();
+  }
+
+  public setDueDate(dueDate: DueDateVO): Either<void, never> {
+    this.props.dueDate = dueDate;
+
+    this.addDomainEvent(
+      new TodoDueDateSetDomainEvent({
+        title: this.title.title,
+        userId: this.userId.id.toString(),
+        completed: this.completed,
+        dueDate: dueDate.value,
+        aggregateId: this.id.toString(),
+      }),
+    );
+    return ok();
+  }
+
+  public removeDueDate(): Either<void, never> {
+    this.props.dueDate = undefined;
+
+    this.addDomainEvent(
+      new TodoDueDateRemovedDomainEvent({
+        title: this.title.title,
+        userId: this.userId.id.toString(),
+        completed: this.completed,
+        aggregateId: this.id.toString(),
+      }),
+    );
     return ok();
   }
 
@@ -165,6 +211,9 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
         title: data.title.title,
       }).value as TitleVO,
       completed: data.completed,
+      dueDate: data.dueDate
+        ? (DueDateVO.create({ value: data.dueDate }).value as DueDateVO)
+        : undefined,
     };
     return new TodoEntity(TodoEntityProps, id);
   }
@@ -189,6 +238,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
             userId: { id: payload.userId },
             title: { title: payload.title },
             completed: payload.completed,
+            dueDate: payload.dueDate ?? undefined,
           });
           break;
         }
@@ -207,6 +257,20 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
         case 'TodoUncompletedDomainEvent':
           if (!todo) throw new Error(`Todo ${payload.aggregateId} is missing its creation event`);
           todo.props.completed = false;
+          break;
+        case 'TodoDueDateSetDomainEvent': {
+          const dueDate = payload.dueDate
+            ? DueDateVO.create({ value: payload.dueDate })
+            : undefined;
+          if (!todo || !dueDate || dueDate.isFail()) {
+            throw new Error(`Invalid due date history for Todo ${payload.aggregateId}`);
+          }
+          todo.props.dueDate = dueDate.value;
+          break;
+        }
+        case 'TodoDueDateRemovedDomainEvent':
+          if (!todo) throw new Error(`Todo ${payload.aggregateId} is missing its creation event`);
+          todo.props.dueDate = undefined;
           break;
         case 'TodoDeletedDomainEvent':
           if (!todo) throw new Error(`Todo ${payload.aggregateId} is missing its creation event`);
@@ -238,6 +302,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
       },
       title: { title: this.props.title.title },
       completed: this.props.completed,
+      dueDate: this.props.dueDate?.value ?? null,
     };
   }
 }
