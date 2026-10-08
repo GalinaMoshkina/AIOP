@@ -6,10 +6,8 @@ import {
   Domain,
 } from 'ddd-tactical-core-boilerplate';
 import { DeleteTodoCommand } from '../../commands/delete-todo.command';
-import { Inject } from '@nestjs/common';
 import { ApplicationErrors } from '../errors';
 import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
-import { TodoWriteRepoPortToken } from '../../constants';
 import { Traceable } from '@lib/infra/telemetry';
 
 type DeleteTodoUseCaseResponse = Either<
@@ -28,10 +26,7 @@ export class DeleteTodoHandler
   get boundedContext() {
     return 'Todo';
   }
-  constructor(
-    @Inject(TodoWriteRepoPortToken)
-    private readonly todoRepo: TodoWriteRepoPort,
-  ) {}
+  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
 
   @Traceable({
     operation: '[Todo] DeleteTodoCommandHandler',

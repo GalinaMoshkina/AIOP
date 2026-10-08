@@ -1,17 +1,12 @@
 import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
 import { TodoCompletedIntegrationEvent } from '@src/lib/bounded-contexts/todo/todo/contracts/integration-events/todo-completed.integration-event';
 import { IncrementTodosCommand } from '../../../commands/Increment-todos.command';
-import { StreamingCommandBusToken } from '../../../constants';
-import { Inject } from '@nestjs/common';
 import { Traceable } from '@lib/infra/telemetry';
 
 export class TodoCompletedIntegrationEventHandler
   implements Application.IHandleIntegrationEvent
 {
-  constructor(
-    @Inject(StreamingCommandBusToken)
-    private commandBus: Infra.CommandBus.IStreamCommandBus,
-  ) {}
+  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
 
   get event() {
     return TodoCompletedIntegrationEvent;

@@ -5,13 +5,11 @@ import {
   ok,
   Domain,
 } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { AddTodoCommand } from '../../commands/add-todo.command';
 import { DomainErrors } from '../../domain/errors';
 import { TitleVO } from '../../domain/title.value-object';
 import { TodoEntity } from '../../domain/todo.entity';
 import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
-import { TodoWriteRepoPortToken } from '../../constants';
 import { UserIdVO } from '../../domain/user-id.value-object';
 import { Traceable } from '@lib/infra/telemetry';
 
@@ -23,10 +21,7 @@ type AddTodoUseCaseResponse = Either<
 export class AddTodoCommandHandler
   implements Application.ICommandHandler<AddTodoCommand, string>
 {
-  constructor(
-    @Inject(TodoWriteRepoPortToken)
-    private readonly todoRepo: TodoWriteRepoPort,
-  ) {}
+  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
 
   get command() {
     return AddTodoCommand;

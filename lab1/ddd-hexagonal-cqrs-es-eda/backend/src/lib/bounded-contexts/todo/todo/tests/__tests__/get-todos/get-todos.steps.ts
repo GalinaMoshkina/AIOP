@@ -34,7 +34,26 @@ describe('Get todos feature test', () => {
       .build();
 
     expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
-    expect(result.value).toEqual([todoReadModel]);
+    expect(result.value).toEqual({ items: [todoReadModel.props], total: 1 });
+  });
+
+  it('Passes pagination and status filters to the read port', async () => {
+    const { userId } = GET_TODOS_SUCCESS_CASE;
+    mockAsyncLocalStorageGet(userId);
+
+    const mockTodoReadRepo = new MockGetTodosReadRepo();
+    const getTodosQuery = new GetTodosQuery(2, 10, 'active');
+
+    const getTodosHandler = new GetTodosHandler(
+      mockTodoReadRepo.getMockTodoReadRepo(),
+    );
+    await getTodosHandler.execute(getTodosQuery);
+
+    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
+      limit: 10,
+      offset: 10,
+      status: 'active',
+    });
   });
 
   it('Get all todos successfully, empty array', async () => {
@@ -53,7 +72,7 @@ describe('Get todos feature test', () => {
 
     //then
     expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
-    expect(result.value).toEqual([]);
+    expect(result.value).toEqual({ items: [], total: 0 });
   });
 
   it('Failed to get all todos, repo error', async () => {

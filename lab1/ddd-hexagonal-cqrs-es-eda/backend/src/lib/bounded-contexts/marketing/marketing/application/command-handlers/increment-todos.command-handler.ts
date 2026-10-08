@@ -5,13 +5,11 @@ import {
   Domain,
   fail,
 } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { IncrementTodosCommand } from '../../commands/Increment-todos.command';
 import { DomainErrors } from '../../domain/errors';
 import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
 import { Traceable } from '@lib/infra/telemetry';
 import { ApplicationErrors } from '../errors';
-import { UserWriteRepoPortToken } from '../../constants';
 
 type IncrementDepositsCommandHandlerResponse = Either<
   void,
@@ -25,9 +23,7 @@ export class IncrementTodosCommandHandler
       Promise<IncrementDepositsCommandHandlerResponse>
     >
 {
-  constructor(
-    @Inject(UserWriteRepoPortToken) private userRepo: UserWriteRepoPort,
-  ) {}
+  constructor(private userRepo: UserWriteRepoPort) {}
 
   get command() {
     return IncrementTodosCommand;

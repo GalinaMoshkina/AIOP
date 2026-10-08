@@ -1,17 +1,12 @@
 import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { TodoModifiedTitleDomainEvent } from '../../../domain/events/todo-modified-title.event';
-import { PubSubIntegrationEventBusToken } from '../../../constants';
 import { TodoModifiedTitleIntegrationEvent } from '../../../contracts/integration-events/todo-modified-title.integration-event';
 import { Traceable } from '@lib/infra/telemetry';
 
 export class TodoModifiedTitleDomainToPubSubIntegrationEventHandler
   implements Application.IHandleDomainEvent
 {
-  constructor(
-    @Inject(PubSubIntegrationEventBusToken)
-    private eventBus: Infra.EventBus.IEventBus,
-  ) {}
+  constructor(private eventBus: Infra.EventBus.IEventBus) {}
   get event() {
     return TodoModifiedTitleDomainEvent;
   }

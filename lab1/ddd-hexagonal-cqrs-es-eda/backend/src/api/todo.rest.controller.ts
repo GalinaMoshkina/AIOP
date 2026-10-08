@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  DefaultValuePipe,
   Get,
   Patch,
   HttpException,
@@ -11,6 +13,7 @@ import {
   Post,
   Delete,
   Param,
+  ParseIntPipe,
   UseGuards,
   Query,
 } from '@nestjs/common';
@@ -28,9 +31,11 @@ import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guar
 import { Infra } from 'ddd-tactical-core-boilerplate';
 import { GetAllTodosResponseDto } from './dto/get-all-todos.dto';
 import { CompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/complete-todo.command';
-import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
-import { GetTodosQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
+import {
+  GetTodosQuery,
+  TodoListStatus,
+} from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
 import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
 import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
 import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
@@ -69,19 +74,41 @@ export class TodoController {
   @Get()
   @ApiOperation({ summary: 'Get all todos' })
   @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
+  async getAll(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('status', new DefaultValuePipe('all')) status: TodoListStatus,
+  ) {
+    this.validateListQuery(page, limit, status);
     const results = await this.queryBus.request(
-      new GetTodosQuery(limit, offset),
+      new GetTodosQuery(page, limit, status),
     );
     if (results.isOk) {
-      const data = results.data;
-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
-      return new GetAllTodosResponseDto(todos);
+      return new GetAllTodosResponseDto({
+        items: results.data.items,
+        total: results.data.total,
+        page,
+        limit,
+      });
     } else {
       throw new HttpException(
         results.error?.message || 'Failed to fetch todos',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  private validateListQuery(
+    page: number,
+    limit: number,
+    status: TodoListStatus,
+  ): void {
+    if (page < 1) throw new BadRequestException('page must be at least 1');
+    if (limit < 1 || limit > 100) {
+      throw new BadRequestException('limit must be between 1 and 100');
+    }
+    if (!['all', 'completed', 'active'].includes(status)) {
+      throw new BadRequestException('status must be all, completed or active');
     }
   }
 

@@ -2,16 +2,11 @@ import { Infra, Application, Either, ok } from 'ddd-tactical-core-boilerplate';
 import { UserEmailChangedIntegrationEvent } from '@src/lib/bounded-contexts/iam/authentication/contracts/integration-events/user-email-changed.integration-event';
 import { ChangeUserEmailCommand } from '../../../commands/change-user-email.command';
 import { Traceable } from '@lib/infra/telemetry';
-import { StreamingCommandBusToken } from '../../../constants';
-import { Inject } from '@nestjs/common';
 
 export class UserEmailChangedIntegrationEventHandler
   implements Application.IHandleIntegrationEvent
 {
-  constructor(
-    @Inject(StreamingCommandBusToken)
-    private commandBus: Infra.CommandBus.IStreamCommandBus,
-  ) {}
+  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
 
   get event() {
     return UserEmailChangedIntegrationEvent;

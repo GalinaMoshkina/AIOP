@@ -6,6 +6,11 @@ import { TodoDeletedDomainToPubSubIntegrationEventHandler } from './todo-deleted
 import { TodoModifiedTitleDomainToPubSubIntegrationEventHandler } from './todo-modified-title-publish-pubsub.handler';
 import { TodoUncompletedDomainToPubSubIntegrationEventHandler } from './todo-uncompleted-publish-pubsub.handler';
 
+export {
+  TodoAddedDomainToIntegrationEventHandler,
+  TodoCompletedDomainToIntegrationEventHandler,
+};
+
 export const StreamingDomainEventHandlers = [
   TodoAddedDomainToIntegrationEventHandler,
   TodoCompletedDomainToIntegrationEventHandler,

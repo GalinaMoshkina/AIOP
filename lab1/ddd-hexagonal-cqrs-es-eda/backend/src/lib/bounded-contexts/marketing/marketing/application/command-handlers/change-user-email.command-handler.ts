@@ -5,13 +5,11 @@ import {
   Domain,
   fail,
 } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { ChangeUserEmailCommand } from '../../commands/change-user-email.command';
 import { Traceable } from '@lib/infra/telemetry';
 import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
 import { ApplicationErrors } from '../errors';
 import { DomainErrors } from '../../domain/errors';
-import { UserWriteRepoPortToken } from '../../constants';
 
 type UpdateUserEmailCommandHandlerResponse = Either<
   void,
@@ -21,10 +19,7 @@ type UpdateUserEmailCommandHandlerResponse = Either<
 export class ChangeUserEmailCommandHandler
   implements Application.ICommandHandler<ChangeUserEmailCommand, void>
 {
-  constructor(
-    @Inject(UserWriteRepoPortToken)
-    private userRepo: UserWriteRepoPort,
-  ) {}
+  constructor(private userRepo: UserWriteRepoPort) {}
 
   get command() {
     return ChangeUserEmailCommand;

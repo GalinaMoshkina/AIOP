@@ -12,13 +12,21 @@ import {
   TodoReadModel,
   TTodoReadModelSnapshot,
 } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
-import { TodoReadRepoPort } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+import {
+  TodoListReadResult,
+  TodoReadRepoPort,
+} from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
+import { TodoListStatus } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
 
 type TodoProjectionRow = QueryResultRow & {
   id: string;
   userId: string;
   title: string;
   completed: boolean;
+};
+
+type TodoProjectionCountRow = QueryResultRow & {
+  total: string;
 };
 
 @Injectable()
@@ -48,10 +56,22 @@ export class TodoReadRepository implements TodoReadRepoPort {
   async getAll(params?: {
     limit?: number;
     offset?: number;
-  }): Promise<Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>> {
+    status?: TodoListStatus;
+  }): Promise<Either<TodoListReadResult, Application.Repo.Errors.Unexpected>> {
     const userId = this.authenticatedUserId();
-    const limit = this.normaliseInteger(params?.limit, 50, 1, 100);
+    const limit = this.normaliseInteger(params?.limit, 20, 1, 100);
     const offset = this.normaliseInteger(params?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const status = params?.status ?? 'all';
+    const completed =
+      status === 'all' ? null : status === 'completed';
+    const values = [userId, completed];
+    const countResult = await this.pool.query<TodoProjectionCountRow>(
+      `SELECT COUNT(*)::int AS total
+       FROM todo_projection
+       WHERE user_id = $1
+         AND ($2::boolean IS NULL OR completed = $2)`,
+      values,
+    );
     const result = await this.pool.query<TodoProjectionRow>(
       `SELECT
          id::text,
@@ -60,12 +80,16 @@ export class TodoReadRepository implements TodoReadRepoPort {
          completed
        FROM todo_projection
        WHERE user_id = $1
+         AND ($2::boolean IS NULL OR completed = $2)
        ORDER BY updated_at DESC, id
-       LIMIT $2 OFFSET $3`,
-      [userId, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [...values, limit, offset],
     );
 
-    return ok(result.rows);
+    return ok({
+      items: result.rows,
+      total: Number(countResult.rows[0]?.total ?? 0),
+    });
   }
 
   private authenticatedUserId(): string {

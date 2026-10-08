@@ -6,11 +6,9 @@ import {
   ok,
 } from 'ddd-tactical-core-boilerplate';
 import { ModifyTodoTitleCommand } from '../../commands/modify-todo-title.command';
-import { Inject } from '@nestjs/common';
 import { DomainErrors } from '../../domain/errors';
 import { TitleVO } from '../../domain/title.value-object';
 import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
-import { TodoWriteRepoPortToken } from '../../constants';
 import { ApplicationErrors } from '../errors';
 import { Traceable } from '@lib/infra/telemetry';
 
@@ -26,10 +24,7 @@ export class ModifyTodoTitleHandler
       Promise<ModifyTodoTitleResponse>
     >
 {
-  constructor(
-    @Inject(TodoWriteRepoPortToken)
-    private readonly todoRepo: TodoWriteRepoPort,
-  ) {}
+  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
 
   get command() {
     return ModifyTodoTitleCommand;

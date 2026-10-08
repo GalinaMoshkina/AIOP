@@ -5,12 +5,10 @@ import {
   ok,
   Domain,
 } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { CompleteTodoCommand } from '../../commands/complete-todo.command';
 import { DomainErrors } from '../../domain/errors';
 import { ApplicationErrors } from '../errors';
 import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
-import { TodoWriteRepoPortToken } from '../../constants';
 import { Traceable } from '@lib/infra/telemetry';
 
 type CompleteTodoUseCaseResponse = Either<
@@ -25,10 +23,7 @@ export class CompleteTodoHandler
       Promise<CompleteTodoUseCaseResponse>
     >
 {
-  constructor(
-    @Inject(TodoWriteRepoPortToken)
-    private readonly todoRepo: TodoWriteRepoPort,
-  ) {}
+  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
 
   get command() {
     return CompleteTodoCommand;

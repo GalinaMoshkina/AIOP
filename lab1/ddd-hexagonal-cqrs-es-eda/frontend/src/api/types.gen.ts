@@ -20,21 +20,25 @@ export type TodoDto = {
      * The completion status of the todo
      */
     completed: boolean;
-    /**
-     * The creation timestamp of the todo
-     */
-    createdAt: number;
-    /**
-     * The last update timestamp of the todo
-     */
-    updatedAt?: number;
 };
 
 export type GetAllTodosResponseDto = {
     /**
      * Array of todo items
      */
-    todos: Array<TodoDto>;
+    items: Array<TodoDto>;
+    /**
+     * Total number of matching todos before pagination
+     */
+    total: number;
+    /**
+     * Current page number
+     */
+    page: number;
+    /**
+     * Current page size
+     */
+    limit: number;
 };
 
 export type ModifyTodoTitleRequestDto = {
@@ -68,8 +72,9 @@ export type TodoControllerGetAllData = {
     body?: never;
     path?: never;
     query: {
+        page: number;
         limit: number;
-        offset: number;
+        status: 'all' | 'completed' | 'active';
     };
     url: '/todos';
 };

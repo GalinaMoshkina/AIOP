@@ -1,17 +1,12 @@
-import { Inject } from '@nestjs/common';
 import { Infra, Application, Either, ok } from 'ddd-tactical-core-boilerplate';
 import { UserRegisteredIntegrationEvent } from '@src/lib/bounded-contexts/iam/authentication/contracts/integration-events/user-registered.integration-event';
 import { CreateUserCommand } from '../../../commands/create-user.command';
-import { StreamingCommandBusToken } from '../../../constants';
 import { Traceable } from '@lib/infra/telemetry';
 
 export class UserRegisteredIntegrationEventHandler
   implements Application.IHandleIntegrationEvent
 {
-  constructor(
-    @Inject(StreamingCommandBusToken)
-    private commandBus: Infra.CommandBus.IStreamCommandBus,
-  ) {}
+  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
 
   get event() {
     return UserRegisteredIntegrationEvent;

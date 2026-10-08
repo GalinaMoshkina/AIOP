@@ -1,8 +1,6 @@
 import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
 import { SendEmailCommand } from '../../commands/send-email.command';
-import { Inject } from '@nestjs/common';
 import { EmailServicePort } from '../../ports/email.service-port';
-import { EmailServicePortToken } from '../../constants';
 import { Traceable } from '@lib/infra/telemetry';
 
 type SendEmailCommandHandlerResponse = Either<
@@ -13,10 +11,7 @@ type SendEmailCommandHandlerResponse = Either<
 export class SendEmailCommandHandler
   implements Application.ICommandHandler<SendEmailCommand, void>
 {
-  constructor(
-    @Inject(EmailServicePortToken)
-    private readonly emailService: EmailServicePort,
-  ) {}
+  constructor(private readonly emailService: EmailServicePort) {}
 
   get command() {
     return SendEmailCommand;

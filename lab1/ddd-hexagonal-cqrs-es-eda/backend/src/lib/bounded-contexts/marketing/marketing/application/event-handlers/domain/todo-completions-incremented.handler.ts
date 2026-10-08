@@ -8,14 +8,8 @@ import {
 } from 'ddd-tactical-core-boilerplate';
 import { TodoCompletionsIncrementedDomainEvent } from '../../../domain/events/todo-completions-incremented.event';
 import { SendEmailCommand } from '../../../commands/send-email.command';
-import { Inject } from '@nestjs/common';
 import { NotificationTemplateReadRepoPort } from '../../../ports/notification-template-read.repo-port';
 import { MarketingNotificationService } from '../../../domain/services/marketing-notification.service';
-import {
-  NotificationTemplateReadRepoPortToken,
-  StreamingCommandBusToken,
-  UserWriteRepoPortToken,
-} from '../../../constants';
 import { ApplicationErrors } from '../../errors';
 import { Traceable } from '@lib/infra/telemetry';
 import { UserWriteRepoPort } from '../../../ports/user-write.repo-port';
@@ -24,11 +18,8 @@ export class TodoCompletionsIncrementedHandler
   implements Application.IHandleDomainEvent
 {
   constructor(
-    @Inject(StreamingCommandBusToken)
     private commandBus: Infra.CommandBus.IStreamCommandBus,
-    @Inject(UserWriteRepoPortToken)
     private readonly userRepo: UserWriteRepoPort,
-    @Inject(NotificationTemplateReadRepoPortToken)
     private notificationTemplateRepo: NotificationTemplateReadRepoPort,
   ) {}
 

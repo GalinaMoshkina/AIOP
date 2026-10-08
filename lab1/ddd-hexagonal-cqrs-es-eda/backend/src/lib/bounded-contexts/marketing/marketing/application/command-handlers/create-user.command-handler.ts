@@ -5,14 +5,12 @@ import {
   Domain,
   fail,
 } from 'ddd-tactical-core-boilerplate';
-import { Inject } from '@nestjs/common';
 import { CreateUserCommand } from '../../commands/create-user.command';
 import { Traceable } from '@lib/infra/telemetry';
 import { UserEntity } from '../../domain/user.entity';
 import { EmailVO } from '../../domain/email.value-object';
 import { CompletedTodosVO } from '../../domain/completed-todos.value-object';
 import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
-import { UserWriteRepoPortToken } from '../../constants';
 
 type CreateUserCommandHandlerResponse = Either<
   void,
@@ -22,10 +20,7 @@ type CreateUserCommandHandlerResponse = Either<
 export class CreateUserCommandHandler
   implements Application.ICommandHandler<CreateUserCommand, void>
 {
-  constructor(
-    @Inject(UserWriteRepoPortToken)
-    private userRepo: UserWriteRepoPort,
-  ) {}
+  constructor(private userRepo: UserWriteRepoPort) {}
 
   get command() {
     return CreateUserCommand;
