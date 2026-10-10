@@ -1,0 +1,1448 @@
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
+index e115870..29ed330 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/dto/get-all-todos.dto.ts
+@@ -1,5 +1,10 @@
+ import { ApiProperty } from '@nestjs/swagger';
+-import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
++
++export type TodoResponseItem = {
++  id: string;
++  title: string;
++  completed: boolean;
++};
+ 
+ export class TodoDto {
+   @ApiProperty({ description: 'The unique identifier of the todo' })
+@@ -11,27 +16,37 @@ export class TodoDto {
+   @ApiProperty({ description: 'The completion status of the todo' })
+   completed: boolean;
+ 
+-  @ApiProperty({ description: 'The creation timestamp of the todo' })
+-  createdAt: number;
+-
+-  @ApiProperty({ description: 'The last update timestamp of the todo', required: false })
+-  updatedAt?: number;
+ }
+ 
+ export class GetAllTodosResponseDto {
+-  @ApiProperty({ 
++  @ApiProperty({
+     type: [TodoDto],
+-    description: 'Array of todo items'
++    description: 'Array of todo items',
+   })
+-  todos: TodoDto[];
++  items: TodoDto[];
++
++  @ApiProperty({ description: 'Total number of matching todos before pagination' })
++  total: number;
++
++  @ApiProperty({ description: 'Current page number' })
++  page: number;
++
++  @ApiProperty({ description: 'Current page size' })
++  limit: number;
+ 
+-  constructor(todos: TodoReadModel[]) {
+-    this.todos = todos.map(todo => ({
++  constructor(params: {
++    items: TodoResponseItem[];
++    total: number;
++    page: number;
++    limit: number;
++  }) {
++    this.items = params.items.map((todo) => ({
+       id: todo.id,
+       title: todo.title,
+       completed: todo.completed,
+-      createdAt: Date.now(),
+-      updatedAt: Date.now(),
+     }));
++    this.total = params.total;
++    this.page = params.page;
++    this.limit = params.limit;
+   }
+ }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+index cc99c66..9565e1e 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+@@ -1,6 +1,8 @@
+ import {
++  BadRequestException,
+   Body,
+   Controller,
++  DefaultValuePipe,
+   Get,
+   Patch,
+   HttpException,
+@@ -11,6 +13,7 @@ import {
+   Post,
+   Delete,
+   Param,
++  ParseIntPipe,
+   UseGuards,
+   Query,
+ } from '@nestjs/common';
+@@ -28,9 +31,11 @@ import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guar
+ import { Infra } from 'ddd-tactical-core-boilerplate';
+ import { GetAllTodosResponseDto } from './dto/get-all-todos.dto';
+ import { CompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/complete-todo.command';
+-import { TodoReadModel } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+ import { AddTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/add-todo.command';
+-import { GetTodosQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
++import {
++  GetTodosQuery,
++  TodoListStatus,
++} from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
+ import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
+ import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
+ import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
+@@ -69,14 +74,22 @@ export class TodoController {
+   @Get()
+   @ApiOperation({ summary: 'Get all todos' })
+   @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
+-  async getAll(@Query('limit') limit: number, @Query('offset') offset: number) {
++  async getAll(
++    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
++    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
++    @Query('status', new DefaultValuePipe('all')) status: TodoListStatus,
++  ) {
++    this.validateListQuery(page, limit, status);
+     const results = await this.queryBus.request(
+-      new GetTodosQuery(limit, offset),
++      new GetTodosQuery(page, limit, status),
+     );
+     if (results.isOk) {
+-      const data = results.data;
+-      const todos: TodoReadModel[] = data.map((todo) => TodoReadModel.fromPrimitives(todo));
+-      return new GetAllTodosResponseDto(todos);
++      return new GetAllTodosResponseDto({
++        items: results.data.items,
++        total: results.data.total,
++        page,
++        limit,
++      });
+     } else {
+       throw new HttpException(
+         results.error?.message || 'Failed to fetch todos',
+@@ -85,6 +98,20 @@ export class TodoController {
+     }
+   }
+ 
++  private validateListQuery(
++    page: number,
++    limit: number,
++    status: TodoListStatus,
++  ): void {
++    if (page < 1) throw new BadRequestException('page must be at least 1');
++    if (limit < 1 || limit > 100) {
++      throw new BadRequestException('limit must be between 1 and 100');
++    }
++    if (!['all', 'completed', 'active'].includes(status)) {
++      throw new BadRequestException('status must be all, completed or active');
++    }
++  }
++
+   @Patch(':id/complete')
+   @HttpCode(HttpStatus.NO_CONTENT)
+   @ApiOperation({ summary: 'Mark a todo as completed' })
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.repository.integration.test.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.repository.integration.test.ts
+new file mode 100644
+index 0000000..4477fdf
+--- /dev/null
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-read.repository.integration.test.ts
+@@ -0,0 +1,114 @@
++import { asyncLocalStorage } from 'ddd-tactical-core-boilerplate';
++import { Pool } from 'pg';
++
++import { TODO_POSTGRES_SCHEMA } from '../todo-postgres.schema';
++import { TodoReadRepository } from '../todo-read.repository';
++
++const describeWithDatabase =
++  process.env.RUN_DATABASE_TESTS === 'true' ? describe : describe.skip;
++
++describeWithDatabase('Todo PostgreSQL read repository', () => {
++  const userId = '4f28e489-3b4f-48f7-a5f8-457246e229a5';
++  const otherUserId = '2f03974f-20e6-4c3e-baa1-eec6e388caa6';
++  const pool = new Pool({
++    host: process.env.PG_HOST ?? 'localhost',
++    port: Number(process.env.PG_PORT ?? 5432),
++    database: process.env.PG_DATABASE ?? 'bitloops_test',
++    user: process.env.PG_USER ?? 'user',
++    password: process.env.PG_PASSWORD ?? 'postgres',
++  });
++  const repository = new TodoReadRepository(pool);
++
++  beforeAll(async () => {
++    await pool.query(TODO_POSTGRES_SCHEMA);
++  });
++
++  beforeEach(async () => {
++    await pool.query('TRUNCATE todo_outbox, todo_projection, todo_events');
++    jest.mocked(asyncLocalStorage.getStore).mockReturnValue({
++      get: (key: string) => {
++        if (key === 'context') return { userId };
++        return undefined;
++      },
++    } as ReturnType<typeof asyncLocalStorage.getStore>);
++  });
++
++  afterAll(async () => {
++    await pool.end();
++  });
++
++  it('filters by owner and completion status before paginating', async () => {
++    await insertProjection({
++      id: '10000000-0000-4000-8000-000000000001',
++      userId,
++      title: 'Newest active todo',
++      completed: false,
++      version: 1,
++      updatedAt: '2026-01-03T00:00:00.000Z',
++    });
++    await insertProjection({
++      id: '10000000-0000-4000-8000-000000000002',
++      userId,
++      title: 'Completed todo',
++      completed: true,
++      version: 1,
++      updatedAt: '2026-01-02T00:00:00.000Z',
++    });
++    await insertProjection({
++      id: '10000000-0000-4000-8000-000000000003',
++      userId,
++      title: 'Oldest active todo',
++      completed: false,
++      version: 1,
++      updatedAt: '2026-01-01T00:00:00.000Z',
++    });
++    await insertProjection({
++      id: '10000000-0000-4000-8000-000000000004',
++      userId: otherUserId,
++      title: 'Other user todo',
++      completed: false,
++      version: 1,
++      updatedAt: '2026-01-04T00:00:00.000Z',
++    });
++
++    const result = await repository.getAll({
++      limit: 1,
++      offset: 1,
++      status: 'active',
++    });
++
++    expect(result.isOk()).toBe(true);
++    if (result.isFail()) throw result.value;
++    expect(result.value.total).toBe(2);
++    expect(result.value.items).toEqual([
++      {
++        id: '10000000-0000-4000-8000-000000000003',
++        userId,
++        title: 'Oldest active todo',
++        completed: false,
++      },
++    ]);
++  });
++
++  async function insertProjection(params: {
++    id: string;
++    userId: string;
++    title: string;
++    completed: boolean;
++    version: number;
++    updatedAt: string;
++  }): Promise<void> {
++    await pool.query(
++      `INSERT INTO todo_projection (id, user_id, title, completed, version, updated_at)
++       VALUES ($1, $2, $3, $4, $5, $6)`,
++      [
++        params.id,
++        params.userId,
++        params.title,
++        params.completed,
++        params.version,
++        params.updatedAt,
++      ],
++    );
++  }
++});
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+index 9909992..10e6cf9 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+@@ -12,7 +12,11 @@ import {
+   TodoReadModel,
+   TTodoReadModelSnapshot,
+ } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+-import { TodoReadRepoPort } from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
++import {
++  TodoListReadResult,
++  TodoReadRepoPort,
++} from '@src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port';
++import { TodoListStatus } from '@src/lib/bounded-contexts/todo/todo/queries/get-todos.query';
+ 
+ type TodoProjectionRow = QueryResultRow & {
+   id: string;
+@@ -21,6 +25,10 @@ type TodoProjectionRow = QueryResultRow & {
+   completed: boolean;
+ };
+ 
++type TodoProjectionCountRow = QueryResultRow & {
++  total: string;
++};
++
+ @Injectable()
+ export class TodoReadRepository implements TodoReadRepoPort {
+   constructor(@Inject(constants.pg_connection) private readonly pool: Pool) {}
+@@ -48,10 +56,22 @@ export class TodoReadRepository implements TodoReadRepoPort {
+   async getAll(params?: {
+     limit?: number;
+     offset?: number;
+-  }): Promise<Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>> {
++    status?: TodoListStatus;
++  }): Promise<Either<TodoListReadResult, Application.Repo.Errors.Unexpected>> {
+     const userId = this.authenticatedUserId();
+-    const limit = this.normaliseInteger(params?.limit, 50, 1, 100);
++    const limit = this.normaliseInteger(params?.limit, 20, 1, 100);
+     const offset = this.normaliseInteger(params?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
++    const status = params?.status ?? 'all';
++    const completed =
++      status === 'all' ? null : status === 'completed';
++    const values = [userId, completed];
++    const countResult = await this.pool.query<TodoProjectionCountRow>(
++      `SELECT COUNT(*)::int AS total
++       FROM todo_projection
++       WHERE user_id = $1
++         AND ($2::boolean IS NULL OR completed = $2)`,
++      values,
++    );
+     const result = await this.pool.query<TodoProjectionRow>(
+       `SELECT
+          id::text,
+@@ -60,12 +80,16 @@ export class TodoReadRepository implements TodoReadRepoPort {
+          completed
+        FROM todo_projection
+        WHERE user_id = $1
++         AND ($2::boolean IS NULL OR completed = $2)
+        ORDER BY updated_at DESC, id
+-       LIMIT $2 OFFSET $3`,
+-      [userId, limit, offset],
++       LIMIT $3 OFFSET $4`,
++      [...values, limit, offset],
+     );
+ 
+-    return ok(result.rows);
++    return ok({
++      items: result.rows,
++      total: Number(countResult.rows[0]?.total ?? 0),
++    });
+   }
+ 
+   private authenticatedUserId(): string {
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/change-user-email.command-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/change-user-email.command-handler.ts
+index 7f86f1c..f3b7cd5 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/change-user-email.command-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/change-user-email.command-handler.ts
+@@ -5,13 +5,11 @@ import {
+   Domain,
+   fail,
+ } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { ChangeUserEmailCommand } from '../../commands/change-user-email.command';
+ import { Traceable } from '@lib/infra/telemetry';
+ import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
+ import { ApplicationErrors } from '../errors';
+ import { DomainErrors } from '../../domain/errors';
+-import { UserWriteRepoPortToken } from '../../constants';
+ 
+ type UpdateUserEmailCommandHandlerResponse = Either<
+   void,
+@@ -21,10 +19,7 @@ type UpdateUserEmailCommandHandlerResponse = Either<
+ export class ChangeUserEmailCommandHandler
+   implements Application.ICommandHandler<ChangeUserEmailCommand, void>
+ {
+-  constructor(
+-    @Inject(UserWriteRepoPortToken)
+-    private userRepo: UserWriteRepoPort,
+-  ) {}
++  constructor(private userRepo: UserWriteRepoPort) {}
+ 
+   get command() {
+     return ChangeUserEmailCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/create-user.command-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/create-user.command-handler.ts
+index ec07663..d91fc97 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/create-user.command-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/create-user.command-handler.ts
+@@ -5,14 +5,12 @@ import {
+   Domain,
+   fail,
+ } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { CreateUserCommand } from '../../commands/create-user.command';
+ import { Traceable } from '@lib/infra/telemetry';
+ import { UserEntity } from '../../domain/user.entity';
+ import { EmailVO } from '../../domain/email.value-object';
+ import { CompletedTodosVO } from '../../domain/completed-todos.value-object';
+ import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
+-import { UserWriteRepoPortToken } from '../../constants';
+ 
+ type CreateUserCommandHandlerResponse = Either<
+   void,
+@@ -22,10 +20,7 @@ type CreateUserCommandHandlerResponse = Either<
+ export class CreateUserCommandHandler
+   implements Application.ICommandHandler<CreateUserCommand, void>
+ {
+-  constructor(
+-    @Inject(UserWriteRepoPortToken)
+-    private userRepo: UserWriteRepoPort,
+-  ) {}
++  constructor(private userRepo: UserWriteRepoPort) {}
+ 
+   get command() {
+     return CreateUserCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/increment-todos.command-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/increment-todos.command-handler.ts
+index 0f3ca03..53cb42f 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/increment-todos.command-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/increment-todos.command-handler.ts
+@@ -5,13 +5,11 @@ import {
+   Domain,
+   fail,
+ } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { IncrementTodosCommand } from '../../commands/Increment-todos.command';
+ import { DomainErrors } from '../../domain/errors';
+ import { UserWriteRepoPort } from '../../ports/user-write.repo-port';
+ import { Traceable } from '@lib/infra/telemetry';
+ import { ApplicationErrors } from '../errors';
+-import { UserWriteRepoPortToken } from '../../constants';
+ 
+ type IncrementDepositsCommandHandlerResponse = Either<
+   void,
+@@ -25,9 +23,7 @@ export class IncrementTodosCommandHandler
+       Promise<IncrementDepositsCommandHandlerResponse>
+     >
+ {
+-  constructor(
+-    @Inject(UserWriteRepoPortToken) private userRepo: UserWriteRepoPort,
+-  ) {}
++  constructor(private userRepo: UserWriteRepoPort) {}
+ 
+   get command() {
+     return IncrementTodosCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/send-email.command-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/send-email.command-handler.ts
+index cb1587c..32c9024 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/send-email.command-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/command-handlers/send-email.command-handler.ts
+@@ -1,8 +1,6 @@
+ import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
+ import { SendEmailCommand } from '../../commands/send-email.command';
+-import { Inject } from '@nestjs/common';
+ import { EmailServicePort } from '../../ports/email.service-port';
+-import { EmailServicePortToken } from '../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ type SendEmailCommandHandlerResponse = Either<
+@@ -13,10 +11,7 @@ type SendEmailCommandHandlerResponse = Either<
+ export class SendEmailCommandHandler
+   implements Application.ICommandHandler<SendEmailCommand, void>
+ {
+-  constructor(
+-    @Inject(EmailServicePortToken)
+-    private readonly emailService: EmailServicePort,
+-  ) {}
++  constructor(private readonly emailService: EmailServicePort) {}
+ 
+   get command() {
+     return SendEmailCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/domain/todo-completions-incremented.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/domain/todo-completions-incremented.handler.ts
+index 77ee718..e812b8b 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/domain/todo-completions-incremented.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/domain/todo-completions-incremented.handler.ts
+@@ -8,14 +8,8 @@ import {
+ } from 'ddd-tactical-core-boilerplate';
+ import { TodoCompletionsIncrementedDomainEvent } from '../../../domain/events/todo-completions-incremented.event';
+ import { SendEmailCommand } from '../../../commands/send-email.command';
+-import { Inject } from '@nestjs/common';
+ import { NotificationTemplateReadRepoPort } from '../../../ports/notification-template-read.repo-port';
+ import { MarketingNotificationService } from '../../../domain/services/marketing-notification.service';
+-import {
+-  NotificationTemplateReadRepoPortToken,
+-  StreamingCommandBusToken,
+-  UserWriteRepoPortToken,
+-} from '../../../constants';
+ import { ApplicationErrors } from '../../errors';
+ import { Traceable } from '@lib/infra/telemetry';
+ import { UserWriteRepoPort } from '../../../ports/user-write.repo-port';
+@@ -24,11 +18,8 @@ export class TodoCompletionsIncrementedHandler
+   implements Application.IHandleDomainEvent
+ {
+   constructor(
+-    @Inject(StreamingCommandBusToken)
+     private commandBus: Infra.CommandBus.IStreamCommandBus,
+-    @Inject(UserWriteRepoPortToken)
+     private readonly userRepo: UserWriteRepoPort,
+-    @Inject(NotificationTemplateReadRepoPortToken)
+     private notificationTemplateRepo: NotificationTemplateReadRepoPort,
+   ) {}
+ 
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/todo-completed.integration-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/todo-completed.integration-handler.ts
+index 4c83dcc..cfb2446 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/todo-completed.integration-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/todo-completed.integration-handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+ import { TodoCompletedIntegrationEvent } from '@src/lib/bounded-contexts/todo/todo/contracts/integration-events/todo-completed.integration-event';
+ import { IncrementTodosCommand } from '../../../commands/Increment-todos.command';
+-import { StreamingCommandBusToken } from '../../../constants';
+-import { Inject } from '@nestjs/common';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoCompletedIntegrationEventHandler
+   implements Application.IHandleIntegrationEvent
+ {
+-  constructor(
+-    @Inject(StreamingCommandBusToken)
+-    private commandBus: Infra.CommandBus.IStreamCommandBus,
+-  ) {}
++  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
+ 
+   get event() {
+     return TodoCompletedIntegrationEvent;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-email-changed.integration-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-email-changed.integration-handler.ts
+index e7463fe..e489675 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-email-changed.integration-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-email-changed.integration-handler.ts
+@@ -2,16 +2,11 @@ import { Infra, Application, Either, ok } from 'ddd-tactical-core-boilerplate';
+ import { UserEmailChangedIntegrationEvent } from '@src/lib/bounded-contexts/iam/authentication/contracts/integration-events/user-email-changed.integration-event';
+ import { ChangeUserEmailCommand } from '../../../commands/change-user-email.command';
+ import { Traceable } from '@lib/infra/telemetry';
+-import { StreamingCommandBusToken } from '../../../constants';
+-import { Inject } from '@nestjs/common';
+ 
+ export class UserEmailChangedIntegrationEventHandler
+   implements Application.IHandleIntegrationEvent
+ {
+-  constructor(
+-    @Inject(StreamingCommandBusToken)
+-    private commandBus: Infra.CommandBus.IStreamCommandBus,
+-  ) {}
++  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
+ 
+   get event() {
+     return UserEmailChangedIntegrationEvent;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-registered.integration-handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-registered.integration-handler.ts
+index 7120c71..9362532 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-registered.integration-handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/application/event-handlers/integration/user-registered.integration-handler.ts
+@@ -1,17 +1,12 @@
+-import { Inject } from '@nestjs/common';
+ import { Infra, Application, Either, ok } from 'ddd-tactical-core-boilerplate';
+ import { UserRegisteredIntegrationEvent } from '@src/lib/bounded-contexts/iam/authentication/contracts/integration-events/user-registered.integration-event';
+ import { CreateUserCommand } from '../../../commands/create-user.command';
+-import { StreamingCommandBusToken } from '../../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class UserRegisteredIntegrationEventHandler
+   implements Application.IHandleIntegrationEvent
+ {
+-  constructor(
+-    @Inject(StreamingCommandBusToken)
+-    private commandBus: Infra.CommandBus.IStreamCommandBus,
+-  ) {}
++  constructor(private commandBus: Infra.CommandBus.IStreamCommandBus) {}
+ 
+   get event() {
+     return UserRegisteredIntegrationEvent;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/marketing.module.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/marketing.module.ts
+index 7c00d5c..10e70e5 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/marketing.module.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/marketing/marketing/marketing.module.ts
+@@ -1,7 +1,74 @@
+ import { Module, Provider } from '@nestjs/common';
+-import { StreamingCommandHandlers } from './application/command-handlers';
++import { Infra } from 'ddd-tactical-core-boilerplate';
++import {
++  StreamingCommandHandlers,
++} from './application/command-handlers';
+ import { EventHandlers } from './application/event-handlers';
+ // import { QueryHandlers } from './application/query-handlers';
++import { ChangeUserEmailCommandHandler } from './application/command-handlers/change-user-email.command-handler';
++import { CreateUserCommandHandler } from './application/command-handlers/create-user.command-handler';
++import { IncrementTodosCommandHandler } from './application/command-handlers/increment-todos.command-handler';
++import { SendEmailCommandHandler } from './application/command-handlers/send-email.command-handler';
++import { TodoCompletionsIncrementedHandler } from './application/event-handlers/domain/todo-completions-incremented.handler';
++import { TodoCompletedIntegrationEventHandler } from './application/event-handlers/integration/todo-completed.integration-handler';
++import { UserEmailChangedIntegrationEventHandler } from './application/event-handlers/integration/user-email-changed.integration-handler';
++import { UserRegisteredIntegrationEventHandler } from './application/event-handlers/integration/user-registered.integration-handler';
++import {
++  EmailServicePortToken,
++  NotificationTemplateReadRepoPortToken,
++  StreamingCommandBusToken,
++  UserWriteRepoPortToken,
++} from './constants';
++import { EmailServicePort } from './ports/email.service-port';
++import { NotificationTemplateReadRepoPort } from './ports/notification-template-read.repo-port';
++import { UserWriteRepoPort } from './ports/user-write.repo-port';
++
++const userWriteCommandHandlerProviders = [
++  IncrementTodosCommandHandler,
++  ChangeUserEmailCommandHandler,
++  CreateUserCommandHandler,
++].map((handler) => ({
++  provide: handler,
++  useFactory: (userWriteRepo: UserWriteRepoPort) => new handler(userWriteRepo),
++  inject: [UserWriteRepoPortToken],
++}));
++
++const emailCommandHandlerProvider = {
++  provide: SendEmailCommandHandler,
++  useFactory: (emailService: EmailServicePort) =>
++    new SendEmailCommandHandler(emailService),
++  inject: [EmailServicePortToken],
++};
++
++const commandBusIntegrationEventHandlerProviders = [
++  TodoCompletedIntegrationEventHandler,
++  UserEmailChangedIntegrationEventHandler,
++  UserRegisteredIntegrationEventHandler,
++].map((handler) => ({
++  provide: handler,
++  useFactory: (commandBus: Infra.CommandBus.IStreamCommandBus) =>
++    new handler(commandBus),
++  inject: [StreamingCommandBusToken],
++}));
++
++const todoCompletionsIncrementedProvider = {
++  provide: TodoCompletionsIncrementedHandler,
++  useFactory: (
++    commandBus: Infra.CommandBus.IStreamCommandBus,
++    userWriteRepo: UserWriteRepoPort,
++    notificationTemplateRepo: NotificationTemplateReadRepoPort,
++  ) =>
++    new TodoCompletionsIncrementedHandler(
++      commandBus,
++      userWriteRepo,
++      notificationTemplateRepo,
++    ),
++  inject: [
++    StreamingCommandBusToken,
++    UserWriteRepoPortToken,
++    NotificationTemplateReadRepoPortToken,
++  ],
++};
+ 
+ @Module({})
+ export class MarketingModule {
+@@ -11,8 +78,10 @@ export class MarketingModule {
+       module: MarketingModule,
+       imports: [...options.imports],
+       providers: [
+-        ...StreamingCommandHandlers,
+-        ...EventHandlers,
++        ...userWriteCommandHandlerProviders,
++        emailCommandHandlerProvider,
++        ...commandBusIntegrationEventHandlerProviders,
++        todoCompletionsIncrementedProvider,
+         // ...QueryHandlers,
+         ...InjectedProviders,
+       ],
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/add-todo.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/add-todo.handler.ts
+index 6c4a8e1..09d768a 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/add-todo.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/add-todo.handler.ts
+@@ -5,13 +5,11 @@ import {
+   ok,
+   Domain,
+ } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { AddTodoCommand } from '../../commands/add-todo.command';
+ import { DomainErrors } from '../../domain/errors';
+ import { TitleVO } from '../../domain/title.value-object';
+ import { TodoEntity } from '../../domain/todo.entity';
+ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
+-import { TodoWriteRepoPortToken } from '../../constants';
+ import { UserIdVO } from '../../domain/user-id.value-object';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+@@ -23,10 +21,7 @@ type AddTodoUseCaseResponse = Either<
+ export class AddTodoCommandHandler
+   implements Application.ICommandHandler<AddTodoCommand, string>
+ {
+-  constructor(
+-    @Inject(TodoWriteRepoPortToken)
+-    private readonly todoRepo: TodoWriteRepoPort,
+-  ) {}
++  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
+ 
+   get command() {
+     return AddTodoCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/complete-todo.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/complete-todo.handler.ts
+index dca23d8..312e03a 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/complete-todo.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/complete-todo.handler.ts
+@@ -5,12 +5,10 @@ import {
+   ok,
+   Domain,
+ } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { CompleteTodoCommand } from '../../commands/complete-todo.command';
+ import { DomainErrors } from '../../domain/errors';
+ import { ApplicationErrors } from '../errors';
+ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
+-import { TodoWriteRepoPortToken } from '../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ type CompleteTodoUseCaseResponse = Either<
+@@ -25,10 +23,7 @@ export class CompleteTodoHandler
+       Promise<CompleteTodoUseCaseResponse>
+     >
+ {
+-  constructor(
+-    @Inject(TodoWriteRepoPortToken)
+-    private readonly todoRepo: TodoWriteRepoPort,
+-  ) {}
++  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
+ 
+   get command() {
+     return CompleteTodoCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/delete-todo.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/delete-todo.handler.ts
+index 829844f..df4ffc6 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/delete-todo.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/delete-todo.handler.ts
+@@ -6,10 +6,8 @@ import {
+   Domain,
+ } from 'ddd-tactical-core-boilerplate';
+ import { DeleteTodoCommand } from '../../commands/delete-todo.command';
+-import { Inject } from '@nestjs/common';
+ import { ApplicationErrors } from '../errors';
+ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
+-import { TodoWriteRepoPortToken } from '../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ type DeleteTodoUseCaseResponse = Either<
+@@ -28,10 +26,7 @@ export class DeleteTodoHandler
+   get boundedContext() {
+     return 'Todo';
+   }
+-  constructor(
+-    @Inject(TodoWriteRepoPortToken)
+-    private readonly todoRepo: TodoWriteRepoPort,
+-  ) {}
++  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
+ 
+   @Traceable({
+     operation: '[Todo] DeleteTodoCommandHandler',
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/modify-title-todo.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/modify-title-todo.handler.ts
+index 1796f8d..021b883 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/modify-title-todo.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/modify-title-todo.handler.ts
+@@ -6,11 +6,9 @@ import {
+   ok,
+ } from 'ddd-tactical-core-boilerplate';
+ import { ModifyTodoTitleCommand } from '../../commands/modify-todo-title.command';
+-import { Inject } from '@nestjs/common';
+ import { DomainErrors } from '../../domain/errors';
+ import { TitleVO } from '../../domain/title.value-object';
+ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
+-import { TodoWriteRepoPortToken } from '../../constants';
+ import { ApplicationErrors } from '../errors';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+@@ -26,10 +24,7 @@ export class ModifyTodoTitleHandler
+       Promise<ModifyTodoTitleResponse>
+     >
+ {
+-  constructor(
+-    @Inject(TodoWriteRepoPortToken)
+-    private readonly todoRepo: TodoWriteRepoPort,
+-  ) {}
++  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
+ 
+   get command() {
+     return ModifyTodoTitleCommand;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/uncomplete-todo.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/uncomplete-todo.handler.ts
+index c7e0c11..18db71d 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/uncomplete-todo.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/uncomplete-todo.handler.ts
+@@ -7,10 +7,8 @@ import {
+ } from 'ddd-tactical-core-boilerplate';
+ import { UncompleteTodoCommand } from '../../commands/uncomplete-todo.command';
+ import { DomainErrors } from '../../domain/errors';
+-import { Inject } from '@nestjs/common';
+ import { ApplicationErrors } from '../errors';
+ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
+-import { TodoWriteRepoPortToken } from '../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ type UncompleteTodoUseCaseResponse = Either<
+@@ -32,10 +30,7 @@ export class UncompleteTodoHandler
+   get boundedContext() {
+     return 'Todo';
+   }
+-  constructor(
+-    @Inject(TodoWriteRepoPortToken)
+-    private readonly todoRepo: TodoWriteRepoPort,
+-  ) {}
++  constructor(private readonly todoRepo: TodoWriteRepoPort) {}
+ 
+   @Traceable({
+     operation: '[Todo] UncompleteTodoCommandHandler',
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/index.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/index.ts
+index 1c5026f..32452bf 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/index.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/index.ts
+@@ -6,6 +6,11 @@ import { TodoDeletedDomainToPubSubIntegrationEventHandler } from './todo-deleted
+ import { TodoModifiedTitleDomainToPubSubIntegrationEventHandler } from './todo-modified-title-publish-pubsub.handler';
+ import { TodoUncompletedDomainToPubSubIntegrationEventHandler } from './todo-uncompleted-publish-pubsub.handler';
+ 
++export {
++  TodoAddedDomainToIntegrationEventHandler,
++  TodoCompletedDomainToIntegrationEventHandler,
++};
++
+ export const StreamingDomainEventHandlers = [
+   TodoAddedDomainToIntegrationEventHandler,
+   TodoCompletedDomainToIntegrationEventHandler,
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added-publish-pubsub.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added-publish-pubsub.handler.ts
+index 3b16a08..4a8de7e 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added-publish-pubsub.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added-publish-pubsub.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoAddedDomainEvent } from '../../../domain/events/todo-added.event';
+-import { PubSubIntegrationEventBusToken } from '../../../constants';
+ import { TodoAddedIntegrationEvent } from '../../../contracts/integration-events/todo-added.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoAddedDomainToPubSubIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(PubSubIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoAddedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added.handler.ts
+index dc413eb..32d7671 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-added.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoAddedDomainEvent } from '../../../domain/events/todo-added.event';
+-import { StreamingIntegrationEventBusToken } from '../../../constants';
+ import { TodoAddedIntegrationEvent } from '../../../contracts/integration-events/todo-added.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoAddedDomainToIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(StreamingIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoAddedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed-publish-pubsub.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed-publish-pubsub.handler.ts
+index 6f1df63..6327a4f 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed-publish-pubsub.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed-publish-pubsub.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoCompletedDomainEvent } from '../../../domain/events/todo-completed.event';
+-import { PubSubIntegrationEventBusToken } from '../../../constants';
+ import { TodoCompletedIntegrationEvent } from '../../../contracts/integration-events/todo-completed.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoCompletedDomainToPubSubIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(PubSubIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoCompletedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed.handler.ts
+index 497982e..8b47ad5 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-completed.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, Either, ok } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoCompletedDomainEvent } from '../../../domain/events/todo-completed.event';
+ import { TodoCompletedIntegrationEvent } from '../../../contracts/integration-events/todo-completed.integration-event';
+-import { StreamingIntegrationEventBusToken } from '../../../constants';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoCompletedDomainToIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(StreamingIntegrationEventBusToken)
+-    private integrationEventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private integrationEventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoCompletedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-deleted-publish-pubsub.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-deleted-publish-pubsub.handler.ts
+index 8bc5ce4..455133e 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-deleted-publish-pubsub.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-deleted-publish-pubsub.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoDeletedDomainEvent } from '../../../domain/events/todo-deleted.event';
+-import { PubSubIntegrationEventBusToken } from '../../../constants';
+ import { TodoDeletedIntegrationEvent } from '../../../contracts/integration-events/todo-deleted.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoDeletedDomainToPubSubIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(PubSubIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoDeletedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-modified-title-publish-pubsub.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-modified-title-publish-pubsub.handler.ts
+index 93029e9..56d7338 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-modified-title-publish-pubsub.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-modified-title-publish-pubsub.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoModifiedTitleDomainEvent } from '../../../domain/events/todo-modified-title.event';
+-import { PubSubIntegrationEventBusToken } from '../../../constants';
+ import { TodoModifiedTitleIntegrationEvent } from '../../../contracts/integration-events/todo-modified-title.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoModifiedTitleDomainToPubSubIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(PubSubIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoModifiedTitleDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-uncompleted-publish-pubsub.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-uncompleted-publish-pubsub.handler.ts
+index 1919192..6180b6c 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-uncompleted-publish-pubsub.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/event-handlers/domain/todo-uncompleted-publish-pubsub.handler.ts
+@@ -1,17 +1,12 @@
+ import { Infra, Application, ok, Either } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ import { TodoUncompletedDomainEvent } from '../../../domain/events/todo-uncompleted.event';
+-import { PubSubIntegrationEventBusToken } from '../../../constants';
+ import { TodoUncompletedIntegrationEvent } from '../../../contracts/integration-events/todo-uncompleted.integration-event';
+ import { Traceable } from '@lib/infra/telemetry';
+ 
+ export class TodoUncompletedDomainToPubSubIntegrationEventHandler
+   implements Application.IHandleDomainEvent
+ {
+-  constructor(
+-    @Inject(PubSubIntegrationEventBusToken)
+-    private eventBus: Infra.EventBus.IEventBus,
+-  ) {}
++  constructor(private eventBus: Infra.EventBus.IEventBus) {}
+   get event() {
+     return TodoUncompletedDomainEvent;
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
+index 2f2f75e..7c1b950 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/query-handlers/get-todos.handler.ts
+@@ -1,23 +1,20 @@
+ import { Application, Either, ok, fail } from 'ddd-tactical-core-boilerplate';
+-import { Inject } from '@nestjs/common';
+ // import { QueryHandler } from '@nestjs/cqrs';
+-import { TTodoReadModelSnapshot } from '../../domain/todo.read-model';
+-import { TodoReadRepoPort } from '../../ports/todo-read.repo-port';
++import {
++  TodoListReadResult,
++  TodoReadRepoPort,
++} from '../../ports/todo-read.repo-port';
+ import { GetTodosQuery } from '../../queries/get-todos.query';
+ import { Traceable } from '@lib/infra/telemetry';
+-import { TodoReadRepoPortToken } from '../../constants';
+ 
+ export type GetTodosQueryHandlerResponse = Either<
+-  TTodoReadModelSnapshot[],
++  TodoListReadResult,
+   Application.Repo.Errors.Unexpected
+ >;
+ 
+ export class GetTodosHandler
+-  implements Application.IQueryHandler<GetTodosQuery, TTodoReadModelSnapshot[]> {
+-  constructor(
+-    @Inject(TodoReadRepoPortToken)
+-    private readonly todoRepo: TodoReadRepoPort,
+-  ) { }
++  implements Application.IQueryHandler<GetTodosQuery, TodoListReadResult> {
++  constructor(private readonly todoRepo: TodoReadRepoPort) {}
+ 
+   get query() {
+     return GetTodosQuery;
+@@ -36,36 +33,12 @@ export class GetTodosHandler
+     },
+   })
+   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
+-    const { limit, offset } = query;
+-    const results = await this.todoRepo.getAll({ limit, offset });
++    const results = await this.todoRepo.getAll({
++      limit: query.limit,
++      offset: query.offset,
++      status: query.status,
++    });
+     if (results.isFail()) return fail(results.value);
+-    if (results.value) return ok(results.value);
+-    return ok([]);
++    return ok(results.value);
+   }
+ }
+-
+-// @QueryHandler(GetTodosQuery)
+-// export class GetTodosHandler
+-//   implements
+-//     Application.IQueryHandler<
+-//       GetTodosQuery,
+-//       Promise<GetTodosQueryHandlerResponse>
+-//     >
+-// {
+-//   get query() {
+-//     return GetTodosQuery;
+-//   }
+-
+-//   get boundedContext() {
+-//     return 'Todo';
+-//   }
+-//   constructor(
+-//     @Inject(TodoReadRepoPortToken) private todoRepo: TodoReadRepoPort,
+-//   ) {}
+-
+-//   async execute(query: GetTodosQuery): Promise<GetTodosQueryHandlerResponse> {
+-//     const todos = await this.todoRepo.getAll(query.ctx);
+-//     if (todos) return ok(todos);
+-//     return ok([]);
+-//   }
+-// }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+index 6115a90..2109d4e 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+@@ -1,13 +1,20 @@
+ import { Application, Either } from 'ddd-tactical-core-boilerplate';
+ import { TTodoReadModelSnapshot } from '../domain/todo.read-model.js';
++import { TodoListStatus } from '../queries/get-todos.query';
++
++export type TodoListReadResult = {
++  items: TTodoReadModelSnapshot[];
++  total: number;
++};
+ 
+ export interface TodoReadRepoPort
+   extends Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot> {
+   getAll(params?: {
+     limit?: number;
+     offset?: number;
++    status?: TodoListStatus;
+   }): Promise<
+-    Either<TTodoReadModelSnapshot[], Application.Repo.Errors.Unexpected>
++    Either<TodoListReadResult, Application.Repo.Errors.Unexpected>
+   >;
+ }
+ // export interface ITodoReadRepository {
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
+index f896faa..0f86d5e 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/queries/get-todos.query.ts
+@@ -1,7 +1,17 @@
+ import { Application } from 'ddd-tactical-core-boilerplate';
+ 
++export type TodoListStatus = 'all' | 'completed' | 'active';
++
+ export class GetTodosQuery extends Application.Query {
+-  constructor(public readonly limit?: number, public readonly offset?: number) {
++  constructor(
++    public readonly page: number = 1,
++    public readonly limit: number = 20,
++    public readonly status: TodoListStatus = 'all',
++  ) {
+     super('Todo');
+   }
++
++  get offset(): number {
++    return (this.page - 1) * this.limit;
++  }
+ }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
+index 4b5c3eb..71be44b 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos-read-repo.mock.ts
+@@ -5,8 +5,10 @@ import {
+   fail,
+   asyncLocalStorage,
+ } from 'ddd-tactical-core-boilerplate';
+-import { TodoReadModel } from '../../../domain/todo.read-model';
+-import { TodoReadRepoPort } from '../../../ports/todo-read.repo-port';
++import {
++  TodoListReadResult,
++  TodoReadRepoPort,
++} from '../../../ports/todo-read.repo-port';
+ import {
+   GET_TODOS_REPO_ERROR_CASE,
+   GET_TODOS_SUCCESS_CASE,
+@@ -31,24 +33,30 @@ export class MockGetTodosReadRepo {
+   private getMockGetAllMethod(): jest.Mock {
+     return jest.fn(
+       (): Promise<
+-        Either<TodoReadModel[] | null, Application.Repo.Errors.Unexpected>
++        Either<TodoListReadResult, Application.Repo.Errors.Unexpected>
+       > => {
+         const ctx = asyncLocalStorage.getStore()?.get('context');
+         if (ctx.userId === GET_TODOS_SUCCESS_CASE.userId) {
+           const { userId, title, titleId, completed } = GET_TODOS_SUCCESS_CASE;
+-          const todo = TodoReadModel.fromPrimitives({
+-            userId,
+-            title,
+-            id: titleId,
+-            completed,
+-          });
+-          return Promise.resolve(ok([todo]));
++          return Promise.resolve(
++            ok({
++              items: [
++                {
++                  userId,
++                  title,
++                  id: titleId,
++                  completed,
++                },
++              ],
++              total: 1,
++            }),
++          );
+         } else if (ctx.userId === GET_TODOS_REPO_ERROR_CASE.userId) {
+           return Promise.resolve(
+             fail(new Application.Repo.Errors.Unexpected('Unexpected error')),
+           );
+         }
+-        return Promise.resolve(ok(null));
++        return Promise.resolve(ok({ items: [], total: 0 }));
+       },
+     );
+   }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
+index 476553f..a0a92fe 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/get-todos/get-todos.steps.ts
+@@ -34,7 +34,26 @@ describe('Get todos feature test', () => {
+       .build();
+ 
+     expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
+-    expect(result.value).toEqual([todoReadModel]);
++    expect(result.value).toEqual({ items: [todoReadModel.props], total: 1 });
++  });
++
++  it('Passes pagination and status filters to the read port', async () => {
++    const { userId } = GET_TODOS_SUCCESS_CASE;
++    mockAsyncLocalStorageGet(userId);
++
++    const mockTodoReadRepo = new MockGetTodosReadRepo();
++    const getTodosQuery = new GetTodosQuery(2, 10, 'active');
++
++    const getTodosHandler = new GetTodosHandler(
++      mockTodoReadRepo.getMockTodoReadRepo(),
++    );
++    await getTodosHandler.execute(getTodosQuery);
++
++    expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalledWith({
++      limit: 10,
++      offset: 10,
++      status: 'active',
++    });
+   });
+ 
+   it('Get all todos successfully, empty array', async () => {
+@@ -53,7 +72,7 @@ describe('Get todos feature test', () => {
+ 
+     //then
+     expect(mockTodoReadRepo.mockGetAllMethod).toHaveBeenCalled();
+-    expect(result.value).toEqual([]);
++    expect(result.value).toEqual({ items: [], total: 0 });
+   });
+ 
+   it('Failed to get all todos, repo error', async () => {
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/todo.module.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/todo.module.ts
+index 0f64501..ccc07df 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/todo.module.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/todo.module.ts
+@@ -1,19 +1,72 @@
+ import { Module, Provider } from '@nestjs/common';
++import { Infra } from 'ddd-tactical-core-boilerplate';
+ import { PubSubCommandHandlers } from './application/command-handlers';
+ import { EventHandlers } from './application/event-handlers';
+ import { QueryHandlers } from './application/query-handlers';
++import { GetTodosHandler } from './application/query-handlers/get-todos.handler';
++import {
++  PubSubIntegrationEventBusToken,
++  StreamingIntegrationEventBusToken,
++  TodoReadRepoPortToken,
++  TodoWriteRepoPortToken,
++} from './constants';
++import { TodoReadRepoPort } from './ports/todo-read.repo-port';
++import { TodoWriteRepoPort } from './ports/todo-write.repo-port';
++import {
++  TodoAddedDomainToIntegrationEventHandler,
++  TodoCompletedDomainToIntegrationEventHandler,
++} from './application/event-handlers/domain';
++
++type TodoCommandHandlerType = new (
++  todoWriteRepo: TodoWriteRepoPort,
++) => unknown;
++
++type TodoDomainEventHandlerType = new (
++  eventBus: Infra.EventBus.IEventBus,
++) => unknown;
++
++const writeCommandHandlerProviders = PubSubCommandHandlers.map((handler) => ({
++  provide: handler,
++  useFactory: (todoWriteRepo: TodoWriteRepoPort) =>
++    new (handler as TodoCommandHandlerType)(todoWriteRepo),
++  inject: [TodoWriteRepoPortToken],
++}));
++
++const streamingDomainEventHandlerProviders = EventHandlers.map((handler) => {
++  const eventBusToken =
++    handler === TodoAddedDomainToIntegrationEventHandler ||
++    handler === TodoCompletedDomainToIntegrationEventHandler
++      ? StreamingIntegrationEventBusToken
++      : PubSubIntegrationEventBusToken;
++
++  return {
++    provide: handler,
++    useFactory: (eventBus: Infra.EventBus.IEventBus) =>
++      new (handler as TodoDomainEventHandlerType)(eventBus),
++    inject: [eventBusToken],
++  };
++});
+ 
+ @Module({})
+ export class TodoModule {
+   static register(options: { inject: Provider<any>[]; imports: any[] }) {
+     const InjectedProviders = options.inject || [];
++    const QueryHandlerProviders = QueryHandlers.filter(
++      (handler) => handler !== GetTodosHandler,
++    );
+     return {
+       module: TodoModule,
+       imports: [...options.imports],
+       providers: [
+-        ...PubSubCommandHandlers,
+-        ...EventHandlers,
+-        ...QueryHandlers,
++        ...writeCommandHandlerProviders,
++        ...streamingDomainEventHandlerProviders,
++        ...QueryHandlerProviders,
++        {
++          provide: GetTodosHandler,
++          useFactory: (todoReadRepo: TodoReadRepoPort) =>
++            new GetTodosHandler(todoReadRepo),
++          inject: [TodoReadRepoPortToken],
++        },
+         ...InjectedProviders,
+       ],
+       exports: [...PubSubCommandHandlers, ...EventHandlers, ...QueryHandlers],
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
+index 26db001..027e0a3 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/api/types.gen.ts
+@@ -20,21 +20,25 @@ export type TodoDto = {
+      * The completion status of the todo
+      */
+     completed: boolean;
+-    /**
+-     * The creation timestamp of the todo
+-     */
+-    createdAt: number;
+-    /**
+-     * The last update timestamp of the todo
+-     */
+-    updatedAt?: number;
+ };
+ 
+ export type GetAllTodosResponseDto = {
+     /**
+      * Array of todo items
+      */
+-    todos: Array<TodoDto>;
++    items: Array<TodoDto>;
++    /**
++     * Total number of matching todos before pagination
++     */
++    total: number;
++    /**
++     * Current page number
++     */
++    page: number;
++    /**
++     * Current page size
++     */
++    limit: number;
+ };
+ 
+ export type ModifyTodoTitleRequestDto = {
+@@ -68,8 +72,9 @@ export type TodoControllerGetAllData = {
+     body?: never;
+     path?: never;
+     query: {
++        page: number;
+         limit: number;
+-        offset: number;
++        status: 'all' | 'completed' | 'active';
+     };
+     url: '/todos';
+ };
+@@ -256,4 +261,4 @@ export type TodoSseControllerSubscribeResponses = {
+ 
+ export type ClientOptions = {
+     baseUrl: string;
+-};
+\ No newline at end of file
++};
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
+index 6656190..8617203 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/components/Todo/Panel/TodoPanelController.tsx
+@@ -12,7 +12,8 @@ function TodoPanelController(): JSX.Element {
+ 
+ 
+   const loadTodos = async () => {
+-    dispatch(loadMoreTodos({ offset: todoIdsState.length, limit: 5 }));
++    const limit = 5;
++    dispatch(loadMoreTodos({ page: Math.floor(todoIdsState.length / limit) + 1, limit }));
+   };
+ 
+   const addItem = () => {
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+index 12c147d..d6a42bc 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+@@ -3,12 +3,18 @@ import { type Todo } from '../../models/Todo';
+ type GetAllTodoSuccessResponse = {
+   status: 'success';
+   todos: Todo[];
++  total: number;
++  page: number;
++  limit: number;
+   error: undefined;
+ };
+ 
+ type GetAllTodoCachedResponse = {
+   status: 'cached';
+   todos: Todo[];
++  total: number;
++  page: number;
++  limit: number;
+   error: undefined;
+ };
+ 
+@@ -16,6 +22,9 @@ type GetAllTodoErrorResponse = {
+   status: 'error';
+   error: string;
+   todos: undefined;
++  total: undefined;
++  page: undefined;
++  limit: undefined;
+ };
+ 
+ export type GetAllTodoResponse =
+@@ -24,7 +33,7 @@ export type GetAllTodoResponse =
+   | GetAllTodoErrorResponse;
+ 
+ export interface ITodoRepository {
+-  getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse>; modifyTodoTitle(id: string, title: string): Promise<void>;
++  getAllTodo(page: number, limit: number): Promise<GetAllTodoResponse>; modifyTodoTitle(id: string, title: string): Promise<void>;
+   completeTodo(id: string): Promise<void>;
+   uncompleteTodo(id: string): Promise<void>;
+   deleteTodo(id: string): Promise<void>;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
+index 552bc30..d02c37c 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/repositories/todo/TodoRepository.ts
+@@ -114,18 +114,24 @@ class TodoRepository implements ITodoRepository {
+     }
+   }
+ 
+-  async getAllTodo(limit: number, offset: number): Promise<GetAllTodoResponse> {
++  async getAllTodo(page: number, limit: number): Promise<GetAllTodoResponse> {
+     try {
+-      const response = await todoControllerGetAll({ query: { limit, offset } });
++      const response = await todoControllerGetAll({ query: { page, limit, status: 'all' } });
+       return {
+         status: 'success',
+-        todos: response.data?.todos?.map(mapExternalTodo) ?? [],
++        todos: response.data?.items?.map(mapExternalTodo) ?? [],
++        total: response.data?.total ?? 0,
++        page: response.data?.page ?? page,
++        limit: response.data?.limit ?? limit,
+         error: undefined,
+       };
+     } catch (error) {
+       return {
+         status: 'error',
+         todos: undefined,
++        total: undefined,
++        page: undefined,
++        limit: undefined,
+         error: error instanceof Error ? error.message : 'Unknown error',
+       };
+     }
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
+index 38fdf02..1fa7d93 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/store/todo/todoSlice.ts
+@@ -39,7 +39,7 @@ export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
+     }
+ 
+     try {
+-      const response = await todoRepository.getAllTodo(5, 0);
++      const response = await todoRepository.getAllTodo(1, 5);
+       if (response.status === 'success' && response.todos) {
+         dispatch(setTodos({ type: 'init', todos: response.todos }));
+         return;
+@@ -53,13 +53,13 @@ export const initTodos = createAsyncThunk<void, void, { rejectValue: string }>(
+ 
+ export const loadMoreTodos = createAsyncThunk<
+   void,
+-  { offset: number; limit: number },
++  { page: number; limit: number },
+   { rejectValue: string }
+ >(
+   'todo/loadMoreTodos',
+-  async ({ offset, limit }, { dispatch, rejectWithValue }) => {
++  async ({ page, limit }, { dispatch, rejectWithValue }) => {
+     try {
+-      const response = await todoRepository.getAllTodo(limit, offset);
++      const response = await todoRepository.getAllTodo(page, limit);
+       if (response.status === 'success' && response.todos) {
+         dispatch(setTodos({ type: 'onAdded', todos: response.todos }));
+         return;
