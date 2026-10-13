@@ -1,0 +1,148 @@
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo.rest.controller.test.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo.rest.controller.test.ts
+new file mode 100644
+index 0000000..fbc978e
+--- /dev/null
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/__tests__/todo.rest.controller.test.ts
+@@ -0,0 +1,62 @@
++import { BadRequestException } from '@nestjs/common';
++import { TodoController } from '../todo.rest.controller';
++
++describe('TodoController', () => {
++  const commandBus = { request: jest.fn() };
++  const queryBus = { request: jest.fn() };
++
++  beforeEach(() => {
++    jest.clearAllMocks();
++  });
++
++  it('returns paginated todo response', async () => {
++    queryBus.request.mockResolvedValue({
++      isOk: true,
++      data: {
++        items: [
++          {
++            id: '10000000-0000-4000-8000-000000000001',
++            userId: '10000000-0000-4000-8000-000000000002',
++            title: 'todo title',
++            completed: false,
++          },
++        ],
++        total: 3,
++      },
++    });
++    const controller = new TodoController(commandBus as never, queryBus as never);
++
++    await expect(controller.getAll(2, 1, 'active')).resolves.toEqual({
++      items: [
++        {
++          id: '10000000-0000-4000-8000-000000000001',
++          title: 'todo title',
++          completed: false,
++        },
++      ],
++      total: 3,
++      page: 2,
++      limit: 1,
++    });
++    expect(queryBus.request).toHaveBeenCalledWith(
++      expect.objectContaining({ page: 2, limit: 1, status: 'active' }),
++    );
++  });
++
++  it.each([
++    [0, 20, 'all'],
++    [1, 0, 'all'],
++    [1, 101, 'all'],
++    [1, 20, 'done'],
++  ])(
++    'rejects invalid list params: page=%s, limit=%s, status=%s',
++    async (page, limit, status) => {
++      const controller = new TodoController(commandBus as never, queryBus as never);
++
++      await expect(
++        controller.getAll(page as number, limit as number, status as never),
++      ).rejects.toBeInstanceOf(BadRequestException);
++      expect(queryBus.request).not.toHaveBeenCalled();
++    },
++  );
++});
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+index 9565e1e..bc3ce07 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts
+@@ -20,6 +20,7 @@ import {
+ import {
+   ApiTags,
+   ApiOperation,
++  ApiQuery,
+   ApiResponse,
+   ApiBearerAuth,
+   ApiParam,
+@@ -73,7 +74,20 @@ export class TodoController {
+ 
+   @Get()
+   @ApiOperation({ summary: 'Get all todos' })
+-  @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
++  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
++  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
++  @ApiQuery({
++    name: 'status',
++    required: false,
++    enum: ['all', 'completed', 'active'],
++    example: 'all',
++  })
++  @ApiResponse({
++    status: 200,
++    type: GetAllTodosResponseDto,
++    description: 'Returns all todos',
++  })
++  @ApiResponse({ status: 400, description: 'Invalid pagination or filter parameter' })
+   async getAll(
+     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+index 10e6cf9..6ec5676 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-read.repository.ts
+@@ -10,7 +10,6 @@ import { Pool, QueryResultRow } from 'pg';
+ import { constants } from '@lib/infra/postgres';
+ import {
+   TodoReadModel,
+-  TTodoReadModelSnapshot,
+ } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
+ import {
+   TodoListReadResult,
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+index 2109d4e..ef77157 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-read.repo-port.ts
+@@ -7,8 +7,13 @@ export type TodoListReadResult = {
+   total: number;
+ };
+ 
+-export interface TodoReadRepoPort
+-  extends Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot> {
++export interface TodoReadRepoPort {
++  getById(
++    id: string,
++  ): Promise<
++    Either<TTodoReadModelSnapshot | null, Application.Repo.Errors.Unexpected>
++  >;
++
+   getAll(params?: {
+     limit?: number;
+     offset?: number;
+diff --git a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+index d6a42bc..19fb45a 100644
+--- a/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
++++ b/lab1/ddd-hexagonal-cqrs-es-eda/frontend/src/infra/interfaces/ITodoRepository.ts
+@@ -33,7 +33,8 @@ export type GetAllTodoResponse =
+   | GetAllTodoErrorResponse;
+ 
+ export interface ITodoRepository {
+-  getAllTodo(page: number, limit: number): Promise<GetAllTodoResponse>; modifyTodoTitle(id: string, title: string): Promise<void>;
++  getAllTodo(page: number, limit: number): Promise<GetAllTodoResponse>;
++  modifyTodoTitle(id: string, title: string): Promise<void>;
+   completeTodo(id: string): Promise<void>;
+   uncompleteTodo(id: string): Promise<void>;
+   deleteTodo(id: string): Promise<void>;

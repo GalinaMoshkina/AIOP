@@ -52,6 +52,7 @@ export class AddTodoCommandHandler
       title: title.value,
       completed: false,
       userId: userId.value,
+      deletedAt: null,
     });
     if (todo.isFail()) {
       return fail(todo.value);

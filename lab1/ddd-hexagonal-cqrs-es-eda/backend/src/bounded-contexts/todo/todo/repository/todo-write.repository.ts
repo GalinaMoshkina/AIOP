@@ -67,6 +67,38 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
   }
 
   @Application.Repo.Decorators.ReturnUnexpectedError()
+  async getByIdIncludingDeleted(
+    id: Domain.UUIDv4,
+  ): Promise<Either<TodoEntity | null, Application.Repo.Errors.Unexpected>> {
+    const authenticatedUserId = this.authenticatedUserId();
+    const result = await this.pool.query<TodoEventRow>(
+      `SELECT
+         event_type AS "eventType",
+         payload,
+         version
+       FROM todo_events
+       WHERE aggregate_id = $1
+       ORDER BY version`,
+      [id.toString()],
+    );
+
+    if (result.rows.length === 0) return ok(null);
+
+    const history: TodoHistoryEvent[] = result.rows.map((row) => ({
+      eventType: row.eventType,
+      payload: row.payload,
+      version: row.version,
+    }));
+    const todo = TodoEntity.fromHistory(history);
+
+    if (todo.userId.id.toString() !== authenticatedUserId) {
+      throw new Error('Todo does not belong to the authenticated user');
+    }
+
+    return ok(todo);
+  }
+
+  @Application.Repo.Decorators.ReturnUnexpectedError()
   async create(
     todo: TodoEntity,
   ): Promise<Either<void, Application.Repo.Errors.Unexpected>> {
@@ -192,13 +224,14 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
     if (operation === 'create') {
       await client.query(
         `INSERT INTO todo_projection (
-           id, user_id, title, completed, version
-         ) VALUES ($1, $2, $3, $4, $5)`,
+           id, user_id, title, completed, deleted_at, version
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           snapshot.id,
           snapshot.userId.id,
           snapshot.title.title,
           snapshot.completed,
+          snapshot.deletedAt,
           committedVersion,
         ],
       );
@@ -207,9 +240,18 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
 
     if (operation === 'delete') {
       const result = await client.query(
-        `DELETE FROM todo_projection
-         WHERE id = $1 AND user_id = $2 AND version = $3`,
-        [snapshot.id, snapshot.userId.id, expectedVersion],
+        `UPDATE todo_projection
+         SET deleted_at = $3,
+             version = $4,
+             updated_at = NOW()
+         WHERE id = $1 AND user_id = $2 AND version = $5`,
+        [
+          snapshot.id,
+          snapshot.userId.id,
+          snapshot.deletedAt,
+          committedVersion,
+          expectedVersion,
+        ],
       );
       this.assertProjectionChanged(result.rowCount, todo.id.toString());
       return;
@@ -219,14 +261,16 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
       `UPDATE todo_projection
        SET title = $3,
            completed = $4,
-           version = $5,
+           deleted_at = $5,
+           version = $6,
            updated_at = NOW()
-       WHERE id = $1 AND user_id = $2 AND version = $6`,
+       WHERE id = $1 AND user_id = $2 AND version = $7`,
       [
         snapshot.id,
         snapshot.userId.id,
         snapshot.title.title,
         snapshot.completed,
+        snapshot.deletedAt,
         committedVersion,
         expectedVersion,
       ],

@@ -4,6 +4,8 @@ import { TodoCompletedDomainToPubSubIntegrationEventHandler } from './todo-compl
 import { TodoCompletedDomainToIntegrationEventHandler } from './todo-completed.handler';
 import { TodoDeletedDomainToPubSubIntegrationEventHandler } from './todo-deleted-publish-pubsub.handler';
 import { TodoModifiedTitleDomainToPubSubIntegrationEventHandler } from './todo-modified-title-publish-pubsub.handler';
+import { TodoRestoredDomainToPubSubIntegrationEventHandler } from './todo-restored-publish-pubsub.handler';
+import { TodoSoftDeletedDomainToPubSubIntegrationEventHandler } from './todo-soft-deleted-publish-pubsub.handler';
 import { TodoUncompletedDomainToPubSubIntegrationEventHandler } from './todo-uncompleted-publish-pubsub.handler';
 
 export {
@@ -16,6 +18,8 @@ export const StreamingDomainEventHandlers = [
   TodoCompletedDomainToIntegrationEventHandler,
   TodoAddedDomainToPubSubIntegrationEventHandler,
   TodoDeletedDomainToPubSubIntegrationEventHandler,
+  TodoSoftDeletedDomainToPubSubIntegrationEventHandler,
+  TodoRestoredDomainToPubSubIntegrationEventHandler,
   TodoCompletedDomainToPubSubIntegrationEventHandler,
   TodoUncompletedDomainToPubSubIntegrationEventHandler,
   TodoModifiedTitleDomainToPubSubIntegrationEventHandler,

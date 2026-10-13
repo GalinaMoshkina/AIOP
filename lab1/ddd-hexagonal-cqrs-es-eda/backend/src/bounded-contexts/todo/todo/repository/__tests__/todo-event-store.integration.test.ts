@@ -109,6 +109,7 @@ describeWithDatabase('Todo PostgreSQL event store and outbox', () => {
       userId: UserIdVO.create({ id: new Domain.UUIDv4(userId) }).value as UserIdVO,
       title: TitleVO.create({ title }).value as TitleVO,
       completed: false,
+      deletedAt: null,
     }).value as TodoEntity;
   }
 });

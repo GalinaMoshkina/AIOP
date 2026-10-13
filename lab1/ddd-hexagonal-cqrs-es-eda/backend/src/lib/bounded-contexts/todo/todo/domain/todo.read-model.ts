@@ -3,6 +3,7 @@ export type TTodoReadModelSnapshot = {
   id: string;
   title: string;
   completed: boolean;
+  deletedAt?: string | null;
 };
 
 export class TodoReadModel {
@@ -10,12 +11,14 @@ export class TodoReadModel {
   public userId: string;
   public title: string;
   public completed: boolean;
+  public deletedAt: string | null;
 
   constructor(public props: TTodoReadModelSnapshot) {
     this.id = props.id;
     this.userId = props.userId;
     this.title = props.title;
     this.completed = props.completed;
+    this.deletedAt = props.deletedAt ?? null;
   }
 
   static fromPrimitives(snapshot: TTodoReadModelSnapshot): TodoReadModel {

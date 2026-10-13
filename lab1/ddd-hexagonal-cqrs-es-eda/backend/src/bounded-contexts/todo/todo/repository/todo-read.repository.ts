@@ -22,6 +22,7 @@ type TodoProjectionRow = QueryResultRow & {
   userId: string;
   title: string;
   completed: boolean;
+  deletedAt: string | null;
 };
 
 type TodoProjectionCountRow = QueryResultRow & {
@@ -42,9 +43,10 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         deleted_at AS "deletedAt"
        FROM todo_projection
-       WHERE id = $1 AND user_id = $2`,
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
       [id, userId],
     );
     const row = result.rows[0];
@@ -68,6 +70,7 @@ export class TodoReadRepository implements TodoReadRepoPort {
       `SELECT COUNT(*)::int AS total
        FROM todo_projection
        WHERE user_id = $1
+         AND deleted_at IS NULL
          AND ($2::boolean IS NULL OR completed = $2)`,
       values,
     );
@@ -76,9 +79,11 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         deleted_at AS "deletedAt"
        FROM todo_projection
        WHERE user_id = $1
+         AND deleted_at IS NULL
          AND ($2::boolean IS NULL OR completed = $2)
        ORDER BY updated_at DESC, id
        LIMIT $3 OFFSET $4`,

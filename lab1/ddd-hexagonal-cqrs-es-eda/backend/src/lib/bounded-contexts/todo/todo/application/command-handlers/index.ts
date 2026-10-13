@@ -3,6 +3,7 @@ import { CompleteTodoHandler } from './complete-todo.handler';
 import { UncompleteTodoHandler } from './uncomplete-todo.handler';
 import { ModifyTodoTitleHandler } from './modify-title-todo.handler';
 import { DeleteTodoHandler } from './delete-todo.handler';
+import { RestoreTodoHandler } from './restore-todo.handler';
 // export const CommandHandlers = [
 //   AddTodoHandler,
 //   CompleteTodoHandler,
@@ -16,6 +17,7 @@ export const PubSubCommandHandlers = [
   UncompleteTodoHandler,
   ModifyTodoTitleHandler,
   DeleteTodoHandler,
+  RestoreTodoHandler,
 ];
 
 export const StreamingCommandHandlers = [

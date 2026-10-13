@@ -13,6 +13,7 @@ describe('Todo event sourcing', () => {
       userId: UserIdVO.create({ id: userId }).value as UserIdVO,
       title,
       completed: false,
+      deletedAt: null,
     }).value as TodoEntity;
 
     const added = serialiseTodoEvent(

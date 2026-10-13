@@ -40,6 +40,7 @@ import {
 import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
 import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
 import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
+import { RestoreTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/restore-todo.command';
 
 @ApiTags('todos')
 @ApiBearerAuth()
@@ -212,5 +213,31 @@ export class TodoController {
           : HttpStatus.BAD_REQUEST,
       );
     }
+  }
+
+  @Post(':id/restore')
+  @ApiOperation({ summary: 'Restore a soft-deleted todo' })
+  @ApiParam({ name: 'id', description: 'Todo ID' })
+  @ApiResponse({ status: 200, description: 'Todo restored' })
+  @ApiResponse({ status: 400, description: 'Invalid todo ID' })
+  @ApiResponse({ status: 404, description: 'Todo not found' })
+  async restoreTodo(@Param('id') id: string) {
+    const command = new RestoreTodoCommand({ id });
+    const result = await this.commandBus.request(command);
+
+    if (!result.isOk) {
+      throw new HttpException(
+        result.error?.message || 'Failed to restore todo',
+        result.error?.code === 'TODO_NOT_FOUND'
+          ? HttpStatus.NOT_FOUND
+          : HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      id: result.data.id,
+      title: result.data.title,
+      completed: result.data.completed,
+    };
   }
 }

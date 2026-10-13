@@ -7,13 +7,15 @@ import { TodoModifiedTitleDomainEvent } from './events/todo-modified-title.event
 import { TodoCompletedDomainEvent } from './events/todo-completed.event';
 import { TodoUncompletedDomainEvent } from './events/todo-uncompleted.event';
 import { Rules } from './rules';
-import { TodoDeletedDomainEvent } from './events/todo-deleted.event';
+import { TodoSoftDeletedDomainEvent } from './events/todo-soft-deleted.event';
+import { TodoRestoredDomainEvent } from './events/todo-restored.event';
 
 export interface TodoProps {
   userId: UserIdVO;
   id?: Domain.UUIDv4;
   title: TitleVO;
   completed: boolean;
+  deletedAt: Date | null;
 }
 
 export type TodoEventType =
@@ -21,13 +23,16 @@ export type TodoEventType =
   | 'TodoModifiedTitleDomainEvent'
   | 'TodoCompletedDomainEvent'
   | 'TodoUncompletedDomainEvent'
-  | 'TodoDeletedDomainEvent';
+  | 'TodoDeletedDomainEvent'
+  | 'TodoSoftDeletedDomainEvent'
+  | 'TodoRestoredDomainEvent';
 
 export type TodoEventPayload = {
   aggregateId: string;
   userId: string;
   title: string;
   completed: boolean;
+  deletedAt?: string | null;
 };
 
 export type TodoHistoryEvent = {
@@ -45,11 +50,11 @@ type TTodoEntityPrimitives = {
     title: string;
   };
   completed: boolean;
+  deletedAt?: string | null;
 };
 
 export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
   private eventStreamVersion = 0;
-  private deleted = false;
 
   private constructor(props: TodoProps, id: Domain.UUIDv4) {
     super(props, id);
@@ -85,12 +90,16 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
     return this.props.userId;
   }
 
+  get deletedAt(): Date | null {
+    return this.props.deletedAt;
+  }
+
   get version(): number {
     return this.eventStreamVersion;
   }
 
   get isDeleted(): boolean {
-    return this.deleted;
+    return this.props.deletedAt !== null;
   }
 
   public complete(): Either<void, DomainErrors.TodoAlreadyCompletedError> {
@@ -129,13 +138,36 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
     return ok();
   }
 
-  public delete(): Either<void, void> {
-    this.deleted = true;
+  public markAsDeleted(): Either<void, void> {
+    if (this.isDeleted) return fail(undefined);
+
+    this.props.deletedAt = new Date();
     this.addDomainEvent(
-      new TodoDeletedDomainEvent({
+      new TodoSoftDeletedDomainEvent({
         title: this.title.title,
         userId: this.userId.id.toString(),
         completed: this.completed,
+        deletedAt: this.props.deletedAt.toISOString(),
+        aggregateId: this.id.toString(),
+      }),
+    );
+    return ok();
+  }
+
+  public delete(): Either<void, void> {
+    return this.markAsDeleted();
+  }
+
+  public restore(): Either<void, void> {
+    if (!this.isDeleted) return fail(undefined);
+
+    this.props.deletedAt = null;
+    this.addDomainEvent(
+      new TodoRestoredDomainEvent({
+        title: this.title.title,
+        userId: this.userId.id.toString(),
+        completed: this.completed,
+        deletedAt: null,
         aggregateId: this.id.toString(),
       }),
     );
@@ -165,6 +197,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
         title: data.title.title,
       }).value as TitleVO,
       completed: data.completed,
+      deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
     };
     return new TodoEntity(TodoEntityProps, id);
   }
@@ -189,6 +222,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
             userId: { id: payload.userId },
             title: { title: payload.title },
             completed: payload.completed,
+            deletedAt: payload.deletedAt ?? null,
           });
           break;
         }
@@ -209,8 +243,15 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
           todo.props.completed = false;
           break;
         case 'TodoDeletedDomainEvent':
+        case 'TodoSoftDeletedDomainEvent':
           if (!todo) throw new Error(`Todo ${payload.aggregateId} is missing its creation event`);
-          todo.deleted = true;
+          todo.props.deletedAt = payload.deletedAt
+            ? new Date(payload.deletedAt)
+            : new Date();
+          break;
+        case 'TodoRestoredDomainEvent':
+          if (!todo) throw new Error(`Todo ${payload.aggregateId} is missing its creation event`);
+          todo.props.deletedAt = null;
           break;
       }
 
@@ -238,6 +279,7 @@ export class TodoEntity extends Domain.Aggregate<TodoProps, Domain.UUIDv4> {
       },
       title: { title: this.props.title.title },
       completed: this.props.completed,
+      deletedAt: this.props.deletedAt?.toISOString() ?? null,
     };
   }
 }

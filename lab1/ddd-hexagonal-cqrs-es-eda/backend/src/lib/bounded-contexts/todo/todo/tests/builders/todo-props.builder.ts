@@ -8,6 +8,7 @@ export class TodoPropsBuilder {
   private title: string;
   private completed: boolean;
   private id?: string;
+  private deletedAt: Date | null = null;
 
   withUserId(userId: string): TodoPropsBuilder {
     this.userId = userId;
@@ -37,6 +38,7 @@ export class TodoPropsBuilder {
         title: this.title,
       }).value as TitleVO,
       completed: this.completed,
+      deletedAt: this.deletedAt,
     };
     if (this.id) {
       todoProps.id = new Domain.UUIDv4(this.id);
