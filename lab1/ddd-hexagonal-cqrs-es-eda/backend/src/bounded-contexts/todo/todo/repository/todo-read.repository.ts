@@ -10,7 +10,6 @@ import { Pool, QueryResultRow } from 'pg';
 import { constants } from '@lib/infra/postgres';
 import {
   TodoReadModel,
-  TTodoReadModelSnapshot,
 } from '@src/lib/bounded-contexts/todo/todo/domain/todo.read-model';
 import {
   TodoListReadResult,

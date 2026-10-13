@@ -20,6 +20,7 @@ import {
 import {
   ApiTags,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
@@ -73,7 +74,20 @@ export class TodoController {
 
   @Get()
   @ApiOperation({ summary: 'Get all todos' })
-  @ApiResponse({ status: 200, type: GetAllTodosResponseDto, description: 'Returns all todos' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['all', 'completed', 'active'],
+    example: 'all',
+  })
+  @ApiResponse({
+    status: 200,
+    type: GetAllTodosResponseDto,
+    description: 'Returns all todos',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid pagination or filter parameter' })
   async getAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,

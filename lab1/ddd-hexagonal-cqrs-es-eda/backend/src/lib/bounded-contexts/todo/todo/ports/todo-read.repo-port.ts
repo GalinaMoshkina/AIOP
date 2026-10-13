@@ -7,8 +7,13 @@ export type TodoListReadResult = {
   total: number;
 };
 
-export interface TodoReadRepoPort
-  extends Application.Repo.ICRUDReadPort<TTodoReadModelSnapshot> {
+export interface TodoReadRepoPort {
+  getById(
+    id: string,
+  ): Promise<
+    Either<TTodoReadModelSnapshot | null, Application.Repo.Errors.Unexpected>
+  >;
+
   getAll(params?: {
     limit?: number;
     offset?: number;
