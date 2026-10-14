@@ -232,7 +232,7 @@ export interface TodoReadRepoPort
 Хорошее упрощение.
 
 
-4. **Тестирование поведения — соблюдается**
+4. **Тестирование поведения (BDD / use-case tests) — соблюдается**
 Ссылка: https://github.com/GalinaMoshkina/AIOP/blob/bfb732bc74b786e10bd777de022eaa3979fb7d28/changes1.diff#L17-L84
 
 Положительные моменты:
@@ -246,6 +246,124 @@ export interface TodoReadRepoPort
 
 В целом все хорошо, но можно кое-что и улучшить: в тесте есть as never и приведение параметров через as number / as never. Это ослабляет проверку типов в самом тесте. Для небольшого unit-теста это не обязательно критично, но лучше использовать типизированные mock-объекты и корректно типизировать наборы входных данных.
 Также тестируется контроллер, а не обработчик запроса и не SQL-адаптер. Поэтому он не подтверждает правильность пагинации в базе данных — для этого нужны тесты соответствующих слоёв.
+
+5. **Бизнес-правила в Domain - не затронуто (будем считать, что тогда соблюдено)**
+
+Изменения сосредоточены на контроллере, контракте чтения и тестах. Новых бизнес-правил в доменной модели нет, поэтому соответствие этого пункта нельзя дополнительно подтвердить данным коммитом.
+
+6. **Интеграционные события и их версионирование - не затронуто (будем считать, что тогда соблюдено)**
+
+Новые интеграционные события и изменения их контрактов отсутствуют в представленном diff. Нарушений в этой области коммит не демонстрирует.
+
+7. **Event Sourcing + Transactional Outbox - также не затронуто**
+
+---
+
+В сравнении с байзлайном у нас 0 нарушений из 7. В то время как у байзлайна в обоих случаях у нас было 4/7 нарушений конвенций.
+
+---
+
+## Проверка генерализуемости
+
+Просим агента добавить soft delete, используя новый файл. Промпт все тот же:
+
+```
+Реализуй soft delete для сущности Todo вместо физического удаления. Запись помечается как удалённая, исключается из обычных списков, но остаётся в базе.
+- DELETE /todos/:id — мягкое удаление, возвращает 204
+- POST /todos/:id/restore — восстановление, возвращает 200 с телом задачи
+- GET /todos — исключает мягко удалённые записи из результата
+- Оба эндпоинта проверяют принадлежность задачи текущему пользователю
+- Задача не найдена или уже в нужном состоянии: 404
+- Поле deletedAt (nullable timestamp) в агрегате Todo
+- Метод markAsDeleted() — устанавливает deletedAt = now, генерирует событие TodoSoftDeleted
+- Метод restore() — сбрасывает deletedAt в null, генерирует событие TodoRestored
+- Инварианты: нельзя удалить уже удалённую, нельзя восстановить не удалённую
+- События TodoSoftDeleted и TodoRestored публикуются в шину событий
+- Projection обновляет read-model при получении этих событий
+```
+
+1. **Ports & Adapters - соблюдено частично**
+   
+Конвенция: ядро /src/lib/bounded-contexts работает через порты, а инфраструктурные части проекта предоставляют адаптеры, в частности в /src/api.
+
+Что соблюдено:
+- Контракт TodoWriteRepoPort расширяет существующий контракт записи и объявляет getByIdIncludingDeleted.
+  
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/ports/todo-write.repo-port.ts#L1007-L1021
+  
+- TodoWriteRepository реализует чтение истории событий для восстановления агрегата.
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/todo-write.repository.ts#L354-L384
+  
+Однако есть проблема — порт не гарантирует наличие метода, необходимого для восстановления.
+
+Файл: todo-write.repo-port.ts, строки 1015–1021.
+Метод getByIdIncludingDeleted объявлен необязательным:
+
+```
+getByIdIncludingDeleted?(
+  id: Domain.UUIDv4,
+): Promise<...>;
+```
+
+Из-за `?` реализация порта может не предоставлять этот метод. Поэтому `RestoreTodoHandler` вынужден отдельно проверять его наличие и выбрасывать обычный Error, если метод отсутствует.
+
+Это ослабляет контракт между application-слоем и адаптером: обработчик восстановления зависит от чтения удалённых задач, но интерфейс не гарантирует такую возможность.
+
+Как исправить: если восстановление поддерживается всеми реализациями этого порта, сделать метод обязательным. Если поддерживаются разные возможности адаптеров, определить отдельный контракт для восстановления.
+
+2. **CQRS - соблюдено**
+   
+Конвенция: команды изменяют состояние, запросы только читают данные.
+
+Что сделано правильно:
+- `RestoreTodoCommand` представляет отдельную операцию восстановления.
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/commands/restore-todo.command.ts#L689-L700
+  
+- `RestoreTodoHandler` загружает агрегат, вызывает restore() и сохраняет результат через репозиторий.
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/application/command-handlers/restore-todo.handler.ts#L546-L569
+  
+- `TodoController` отправляет команду через `commandBus`.
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/api/todo.rest.controller.ts#L216-L218
+  
+Восстановление задачи изменяет состояние, поэтому оформление этой операции как команды соответствует CQRS.
+
+3. **BDD / use-case tests через application layer - соблюдено**
+Конвенция: тестируется поведение сценариев через command/query handlers, а реальные БД и адаптеры заменяются mock-реализациями.
+
+В diff изменены существующие тесты:
+- todo-event-store.integration.test.ts — фикстура дополнена deletedAt: null;
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/bounded-contexts/todo/todo/repository/__tests__/todo-event-store.integration.test.ts#L109-L116
+  
+- todo-event-sourcing.test.ts — обновлена фикстура сущности.
+
+  https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/tests/__tests__/event-sourcing/todo-event-sourcing.test.ts#L13-L18
+  
+Несмотря на то, что изменения незначительные, у нас и так было реализовано большинство необходимых тестов (из-за специфики хранения информации о задачах как append-only списка).
+
+4. **Разделение Domain и Application errors - соблюдено**
+Конвенция: доменные ошибки располагаются в domain-слое, ошибки сценариев приложения — в application-слое. При создании ошибки нужно определить, к какому слою она относится.
+
+В TodoEntity, строки 899–933:
+- markAsDeleted() запрещает повторное мягкое удаление;
+- restore() запрещает восстановление задачи, которая не удалена;
+- при изменениях создаются соответствующие доменные события.
+
+https://github.com/GalinaMoshkina/AIOP/blob/7cd5b569b63d24664ef6ce32a6aba6ab7a7fb5aa/lab1/ddd-hexagonal-cqrs-es-eda/backend/src/lib/bounded-contexts/todo/todo/domain/todo.entity.ts#L899-L933
+
+Таким образом, проверка допустимости операции находится в агрегате, а не в контроллере.
+
+Разделение ошибок не нарушено.
+
+5. **Версионирование контрактов - соблюдено**
+   
+Конвенция: integration events — публичные контракты между bounded contexts. Несовместимые изменения должны приводить к созданию новой версии, а старая версия должна поддерживаться, пока её используют consumers.
+
+Версионирование новых контрактов предусмотрено
 
 
 
