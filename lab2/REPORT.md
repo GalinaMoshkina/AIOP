@@ -66,3 +66,16 @@
 
 <img width="1877" height="341" alt="image" src="https://github.com/user-attachments/assets/cd0d08dd-a7c7-4022-9ea2-45c545b438e5" />
 
+## Создание Pull Request
+
+После внесения изменений агент создал коммит и открыл Pull Request **Add due dates to Todo items (#3)** в репозитории GitHub.
+
+В рамках реализации были добавлены необязательные даты выполнения Todo в формате `YYYY-MM-DD` с проверкой корректности календарной даты. Даты сохраняются в событиях Todo, восстанавливаются из истории событий и отображаются в read projection. Также добавлена поддержка создания Todo с полем `dueDate` и установки, изменения и удаления даты через API `PATCH /todos/:id/due-date`.
+
+Pull Request содержит описание выполненных изменений и указание `Closes #2`, связывающее его с исходным Issue.
+
+Изменения были отправлены из ветки `issue-2-lab2` в `main`.
+
+<img width="70%" height="899" alt="image" src="https://github.com/user-attachments/assets/b7ba62bf-99bb-434d-97fe-c7c2e1e9981f" />
+
+
