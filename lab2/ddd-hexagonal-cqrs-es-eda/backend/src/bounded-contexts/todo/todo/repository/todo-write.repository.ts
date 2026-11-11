@@ -192,13 +192,14 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
     if (operation === 'create') {
       await client.query(
         `INSERT INTO todo_projection (
-           id, user_id, title, completed, version
-         ) VALUES ($1, $2, $3, $4, $5)`,
+           id, user_id, title, completed, due_date, version
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           snapshot.id,
           snapshot.userId.id,
           snapshot.title.title,
           snapshot.completed,
+          snapshot.dueDate,
           committedVersion,
         ],
       );
@@ -219,14 +220,16 @@ export class TodoWriteRepository implements TodoWriteRepoPort {
       `UPDATE todo_projection
        SET title = $3,
            completed = $4,
-           version = $5,
+           due_date = $5,
+           version = $6,
            updated_at = NOW()
-       WHERE id = $1 AND user_id = $2 AND version = $6`,
+       WHERE id = $1 AND user_id = $2 AND version = $7`,
       [
         snapshot.id,
         snapshot.userId.id,
         snapshot.title.title,
         snapshot.completed,
+        snapshot.dueDate,
         committedVersion,
         expectedVersion,
       ],

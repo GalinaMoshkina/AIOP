@@ -3,6 +3,8 @@ import { Domain } from 'ddd-tactical-core-boilerplate';
 import { TodoAddedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-added.event';
 import { TodoCompletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-completed.event';
 import { TodoDeletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-deleted.event';
+import { TodoDueDateRemovedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-due-date-removed.event';
+import { TodoDueDateSetDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-due-date-set.event';
 import { TodoModifiedTitleDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-modified-title.event';
 import { TodoUncompletedDomainEvent } from '@src/lib/bounded-contexts/todo/todo/domain/events/todo-uncompleted.event';
 import {
@@ -32,6 +34,8 @@ type TodoDomainEvent =
   | TodoAddedDomainEvent
   | TodoCompletedDomainEvent
   | TodoDeletedDomainEvent
+  | TodoDueDateRemovedDomainEvent
+  | TodoDueDateSetDomainEvent
   | TodoModifiedTitleDomainEvent
   | TodoUncompletedDomainEvent;
 
@@ -41,6 +45,8 @@ const eventConstructors: Record<PersistableTodoEventType, TodoDomainEventConstru
   TodoAddedDomainEvent,
   TodoCompletedDomainEvent,
   TodoDeletedDomainEvent,
+  TodoDueDateRemovedDomainEvent,
+  TodoDueDateSetDomainEvent,
   TodoModifiedTitleDomainEvent,
   TodoUncompletedDomainEvent,
 };

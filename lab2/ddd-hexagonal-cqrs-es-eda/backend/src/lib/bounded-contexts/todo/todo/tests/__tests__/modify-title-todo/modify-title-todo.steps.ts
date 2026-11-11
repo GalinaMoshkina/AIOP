@@ -47,6 +47,7 @@ describe('Modify title todo feature test', () => {
       userId,
       title: titleAfterUpdate,
       completed,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(
       TodoModifiedTitleDomainEvent,

@@ -4,6 +4,7 @@ type TodoUncompletedDomainEventProps = Domain.TDomainEventProps<{
   userId: string;
   title: string;
   completed: boolean;
+  dueDate?: string | null;
 }>;
 
 export class TodoUncompletedDomainEvent extends Domain.DomainEvent<TodoUncompletedDomainEventProps> {
