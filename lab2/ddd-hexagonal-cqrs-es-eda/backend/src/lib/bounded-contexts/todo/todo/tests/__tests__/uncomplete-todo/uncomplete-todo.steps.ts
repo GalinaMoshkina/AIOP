@@ -47,6 +47,7 @@ describe('Uncomplete todo feature test', () => {
       userId,
       title: todoTitle,
       completed: false,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(
       TodoUncompletedDomainEvent,
@@ -150,6 +151,7 @@ describe('Uncomplete todo feature test', () => {
       userId,
       title: todoTitle,
       completed: false,
+      dueDate: null,
     });
     expect(todoAggregate.domainEvents[0]).toBeInstanceOf(
       TodoUncompletedDomainEvent,

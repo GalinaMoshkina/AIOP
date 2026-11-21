@@ -11,6 +11,9 @@ export class TodoDto {
   @ApiProperty({ description: 'The completion status of the todo' })
   completed: boolean;
 
+  @ApiProperty({ description: 'The optional due date of the todo', required: false, nullable: true })
+  dueDate?: string | null;
+
   @ApiProperty({ description: 'The creation timestamp of the todo' })
   createdAt: number;
 
@@ -30,6 +33,7 @@ export class GetAllTodosResponseDto {
       id: todo.id,
       title: todo.title,
       completed: todo.completed,
+      dueDate: todo.dueDate,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }));

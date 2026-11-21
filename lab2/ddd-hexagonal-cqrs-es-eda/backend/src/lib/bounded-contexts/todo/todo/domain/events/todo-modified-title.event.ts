@@ -4,6 +4,7 @@ type TodoModifiedTitleDomainEventProps = Domain.TDomainEventProps<{
   userId: string;
   title: string;
   completed: boolean;
+  dueDate?: string | null;
 }>;
 
 export class TodoModifiedTitleDomainEvent extends Domain.DomainEvent<TodoModifiedTitleDomainEventProps> {

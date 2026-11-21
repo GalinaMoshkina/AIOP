@@ -14,10 +14,13 @@ import { TodoWriteRepoPort } from '../../ports/todo-write.repo-port';
 import { TodoWriteRepoPortToken } from '../../constants';
 import { UserIdVO } from '../../domain/user-id.value-object';
 import { Traceable } from '@lib/infra/telemetry';
+import { DueDateVO } from '../../domain/due-date.value-object';
 
 type AddTodoUseCaseResponse = Either<
   string,
-  DomainErrors.TitleOutOfBoundsError | Application.Repo.Errors.Unexpected
+  | DomainErrors.InvalidDueDateError
+  | DomainErrors.TitleOutOfBoundsError
+  | Application.Repo.Errors.Unexpected
 >;
 
 export class AddTodoCommandHandler
@@ -53,10 +56,19 @@ export class AddTodoCommandHandler
     const userId = UserIdVO.create({
       id: new Domain.UUIDv4(command.metadata.context.userId),
     });
+    let dueDate: DueDateVO | undefined;
+    if (command.dueDate) {
+      const dueDateResult = DueDateVO.create({ value: command.dueDate });
+      if (dueDateResult.isFail()) {
+        return fail(dueDateResult.value);
+      }
+      dueDate = dueDateResult.value;
+    }
     const todo = TodoEntity.create({
       title: title.value,
       completed: false,
       userId: userId.value,
+      dueDate,
     });
     if (todo.isFail()) {
       return fail(todo.value);

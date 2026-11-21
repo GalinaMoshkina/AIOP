@@ -19,6 +19,7 @@ type TodoProjectionRow = QueryResultRow & {
   userId: string;
   title: string;
   completed: boolean;
+  dueDate: string | null;
 };
 
 @Injectable()
@@ -35,7 +36,8 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         due_date::text AS "dueDate"
        FROM todo_projection
        WHERE id = $1 AND user_id = $2`,
       [id, userId],
@@ -57,7 +59,8 @@ export class TodoReadRepository implements TodoReadRepoPort {
          id::text,
          user_id::text AS "userId",
          title,
-         completed
+         completed,
+         due_date::text AS "dueDate"
        FROM todo_projection
        WHERE user_id = $1
        ORDER BY updated_at DESC, id

@@ -22,6 +22,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { AddTodoRequestDto } from './dto/add-todo.dto';
+import { ModifyTodoDueDateRequestDto } from './dto/modify-todo-due-date.dto';
 import { ModifyTodoTitleRequestDto } from './dto/modify-todo-title.dto';
 import { BUSES_TOKENS } from '../lib/infra/nest-jetstream';
 import { OidcAuthGuard } from '@src/bounded-contexts/iam/iam/oidc/oidc-auth.guard';
@@ -34,6 +35,7 @@ import { GetTodosQuery } from '@src/lib/bounded-contexts/todo/todo/queries/get-t
 import { UncompleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/uncomplete-todo.command';
 import { DeleteTodoCommand } from '@src/lib/bounded-contexts/todo/todo/commands/delete-todo.command';
 import { ModifyTodoTitleCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-title.command';
+import { ModifyTodoDueDateCommand } from '@src/lib/bounded-contexts/todo/todo/commands/modify-todo-due-date.command';
 
 @ApiTags('todos')
 @ApiBearerAuth()
@@ -53,7 +55,10 @@ export class TodoController {
   @ApiResponse({ status: 201, description: 'Todo created successfully' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
   async addTodo(@Body() dto: AddTodoRequestDto) {
-    const command = new AddTodoCommand({ title: dto.title });
+    const command = new AddTodoCommand({
+      title: dto.title,
+      dueDate: dto.dueDate,
+    });
     const result = await this.commandBus.request(command);
 
     if (result.isOk) {
@@ -145,6 +150,34 @@ export class TodoController {
     if (!result.isOk) {
       throw new HttpException(
         result.error?.message || 'Failed to update todo title',
+        result.error?.code === 'TODO_NOT_FOUND'
+          ? HttpStatus.NOT_FOUND
+          : HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Patch(':id/due-date')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Set, change, or remove a todo due date' })
+  @ApiParam({ name: 'id', description: 'Todo ID' })
+  @ApiResponse({ status: 204, description: 'Todo due date updated' })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 404, description: 'Todo not found' })
+  async modifyDueDate(
+    @Param('id') id: string,
+    @Body() dto: ModifyTodoDueDateRequestDto,
+  ) {
+    const command = new ModifyTodoDueDateCommand({
+      id,
+      dueDate: dto.dueDate,
+    });
+
+    const result = await this.commandBus.request(command);
+
+    if (!result.isOk) {
+      throw new HttpException(
+        result.error?.message || 'Failed to update todo due date',
         result.error?.code === 'TODO_NOT_FOUND'
           ? HttpStatus.NOT_FOUND
           : HttpStatus.BAD_REQUEST,

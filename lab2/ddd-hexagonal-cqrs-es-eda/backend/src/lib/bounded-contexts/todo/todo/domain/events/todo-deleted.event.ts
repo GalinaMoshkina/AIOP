@@ -4,6 +4,7 @@ type TodoDeletedDomainEventProps = Domain.TDomainEventProps<{
   userId: string;
   title: string;
   completed: boolean;
+  dueDate?: string | null;
 }>;
 
 export class TodoDeletedDomainEvent extends Domain.DomainEvent<TodoDeletedDomainEventProps> {
